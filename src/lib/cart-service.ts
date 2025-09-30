@@ -107,21 +107,20 @@ export async function addToCart(payload: AddToCartInput): Promise<CartItem> {
   const existing = await collection.findOne({ userId, bookId });
 
   if (existing) {
-    const updateResult = await collection.findOneAndUpdate(
+    const updatedDoc = await collection.findOneAndUpdate(
       { userId, bookId },
       {
         $inc: { quantity: quantityToAdd },
         $set: { addedAt: now },
       },
-      { returnDocument: 'after', includeResultMetadata: true },
+      { returnDocument: 'after' },
     );
 
-    const updatedDoc = updateResult.value;
     if (!updatedDoc) {
       throw new Error('Failed to update existing cart item');
     }
 
-    return normalizeCartItem(updatedDoc);
+    return normalizeCartItem(updatedDoc as CartItemDocument);
   }
 
   const cartItem: CartItemDocument = {
@@ -148,7 +147,7 @@ export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): 
   const newId = `cart-${randomUUID()}`;
 
   const collection = await getCollection();
-  const updateResult = await collection.findOneAndUpdate(
+  const updatedDoc = await collection.findOneAndUpdate(
     { userId, bookId },
     {
       $set: {
@@ -162,15 +161,14 @@ export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): 
         _id: newId,
       },
     },
-    { returnDocument: 'after', upsert: true, includeResultMetadata: true },
+    { returnDocument: 'after', upsert: true },
   );
 
-  const updatedDoc = updateResult.value;
   if (!updatedDoc) {
     throw new Error('Failed to update cart item');
   }
 
-  return normalizeCartItem(updatedDoc);
+  return normalizeCartItem(updatedDoc as CartItemDocument);
 }
 
 export async function removeFromCart(userId: string, bookId: string): Promise<boolean> {
