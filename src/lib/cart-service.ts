@@ -116,11 +116,12 @@ export async function addToCart(payload: AddToCartInput): Promise<CartItem> {
       { returnDocument: 'after' },
     );
 
-    if (!updateResult.value) {
+    const updatedDoc = updateResult?.value;
+    if (!updatedDoc) {
       throw new Error('Failed to update existing cart item');
     }
 
-    return normalizeCartItem(updateResult.value);
+    return normalizeCartItem(updatedDoc);
   }
 
   const cartItem: CartItemDocument = {
@@ -164,11 +165,12 @@ export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): 
     { returnDocument: 'after', upsert: true },
   );
 
-  if (!updateResult.value) {
+  const updatedDoc = updateResult?.value;
+  if (!updatedDoc) {
     throw new Error('Failed to update cart item');
   }
 
-  return normalizeCartItem(updateResult.value);
+  return normalizeCartItem(updatedDoc);
 }
 
 export async function removeFromCart(userId: string, bookId: string): Promise<boolean> {
