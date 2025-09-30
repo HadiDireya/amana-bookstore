@@ -2,6 +2,8 @@ import type { Collection } from 'mongodb';
 import { randomUUID } from 'crypto';
 import clientPromise from './mongodb';
 import { Book, Review } from '@/app/types';
+import booksSeed from '../../data/books.json';
+import reviewsSeed from '../../data/reviews.json';
 
 const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
 const BOOKS_COLLECTION = process.env.MONGODB_BOOKS_COLLECTION || 'books';
@@ -13,6 +15,9 @@ type BookDocument = Partial<Omit<Book, 'id'>> & {
 };
 
 type ReviewDocument = Review & { _id?: string };
+
+const FALLBACK_BOOKS: ReadonlyArray<Book> = booksSeed as Book[];
+const FALLBACK_REVIEWS: ReadonlyArray<Review> = reviewsSeed as Review[];
 
 function toNumericId(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -62,6 +67,29 @@ function normalizeBookSafely(doc: BookDocument): Book | null {
   }
 }
 
+function cloneBook(book: Book): Book {
+  return {
+    ...book,
+    genre: [...book.genre],
+    tags: [...book.tags],
+  };
+}
+
+function getFallbackBooks(): Book[] {
+  return FALLBACK_BOOKS.map(cloneBook);
+}
+
+function findFallbackBookById(id: string | number): Book | null {
+  const normalized = String(id);
+  const match = FALLBACK_BOOKS.find(book => String(book.id) === normalized);
+  return match ? cloneBook(match) : null;
+}
+
+function getFallbackReviews(bookId: string | number): Review[] {
+  const normalized = String(bookId);
+  return FALLBACK_REVIEWS.filter(review => review.bookId === normalized).map(review => ({ ...review }));
+}
+
 function stripMongoId<T extends { _id?: unknown }>(doc: T): Omit<T, '_id'> {
   const { _id, ...rest } = doc;
   void _id;
@@ -73,12 +101,13 @@ export async function fetchAllBooks(): Promise<Book[]> {
     const client = await clientPromise;
     const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
     const docs = await collection.find({}).toArray();
-    return docs
+    const books = docs
       .map(normalizeBookSafely)
       .filter((book): book is Book => book !== null);
+    return books.length > 0 ? books : getFallbackBooks();
   } catch (err) {
     console.error('Failed to fetch all books', err);
-    return [];
+    return getFallbackBooks();
   }
 }
 
@@ -94,10 +123,14 @@ export async function fetchBookById(id: string | number): Promise<Book | null> {
     }
 
     const doc = await collection.findOne({ id: { $in: candidates } });
-    return doc ? normalizeBookSafely(doc) : null;
+    const normalizedDoc = doc ? normalizeBookSafely(doc) : null;
+    if (normalizedDoc) {
+      return normalizedDoc;
+    }
+    return findFallbackBookById(id);
   } catch (err) {
     console.error('Failed to fetch book by id', err);
-    return null;
+    return findFallbackBookById(id);
   }
 }
 
@@ -118,12 +151,28 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
     });
 
     const docs = await collection.find({ id: { $in: candidates } }).toArray();
-    return docs
+    const books = docs
       .map(normalizeBookSafely)
       .filter((book): book is Book => book !== null);
+    const resolvedIds = new Set(books.map(book => String(book.id)));
+    const fallbackBooks = ids
+      .map(id => {
+        if (resolvedIds.has(String(id))) {
+          return null;
+        }
+        return findFallbackBookById(id);
+      })
+      .filter((book): book is Book => book !== null);
+
+    const combined = books.concat(fallbackBooks);
+    return combined.length > 0 ? combined : getFallbackBooks();
   } catch (err) {
     console.error('Failed to fetch books by ids', err);
-    return [];
+    return ids.length > 0
+      ? ids
+          .map(findFallbackBookById)
+          .filter((book): book is Book => book !== null)
+      : getFallbackBooks();
   }
 }
 
@@ -132,10 +181,11 @@ export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
     const client = await clientPromise;
     const collection = client.db(DB_NAME).collection<ReviewDocument>(REVIEWS_COLLECTION);
     const docs = await collection.find({ bookId }).sort({ timestamp: -1 }).toArray();
-    return docs.map(doc => stripMongoId(doc) as Review);
+    const reviews = docs.map(doc => stripMongoId(doc) as Review);
+    return reviews.length > 0 ? reviews : getFallbackReviews(bookId);
   } catch (err) {
     console.error('Failed to fetch reviews for book', err);
-    return [];
+    return getFallbackReviews(bookId);
   }
 }
 
