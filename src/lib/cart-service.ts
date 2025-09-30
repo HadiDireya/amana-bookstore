@@ -21,6 +21,12 @@ export interface AddToCartInput {
   quantity?: number;
 }
 
+export interface UpdateCartQuantityInput {
+  userId: string;
+  bookId: string;
+  quantity: number;
+}
+
 function stripMongoId(doc: CartItemDocument): CartItemDocument {
   const { _id, ...rest } = doc;
   void _id;
@@ -72,6 +78,14 @@ async function getCollection() {
   return client.db(DB_NAME).collection<CartItemDocument>(CART_COLLECTION);
 }
 
+export async function fetchCartItem(userId: string, bookId: string): Promise<CartItem | null> {
+  const normalizedUserId = ensureNonEmptyString(userId, 'userId');
+  const normalizedBookId = ensureNonEmptyString(bookId, 'bookId');
+  const collection = await getCollection();
+  const doc = await collection.findOne({ userId: normalizedUserId, bookId: normalizedBookId });
+  return doc ? normalizeCartItem(doc) : null;
+}
+
 export async function fetchCartByUserId(userId: string): Promise<CartItem[]> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
   const collection = await getCollection();
@@ -119,6 +133,42 @@ export async function addToCart(payload: AddToCartInput): Promise<CartItem> {
 
   await collection.insertOne({ ...cartItem, _id: cartItem.id });
   return normalizeCartItem(cartItem);
+}
+
+export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): Promise<CartItem> {
+  if (!payload) {
+    throw new ValidationError('payload is required');
+  }
+
+  const userId = ensureNonEmptyString(payload.userId, 'userId');
+  const bookId = ensureNonEmptyString(payload.bookId, 'bookId');
+  const normalizedQuantity = ensureQuantity(payload.quantity);
+  const now = new Date().toISOString();
+  const newId = `cart-${randomUUID()}`;
+
+  const collection = await getCollection();
+  const updateResult = await collection.findOneAndUpdate(
+    { userId, bookId },
+    {
+      $set: {
+        quantity: normalizedQuantity,
+        addedAt: now,
+      },
+      $setOnInsert: {
+        id: newId,
+        userId,
+        bookId,
+        _id: newId,
+      },
+    },
+    { returnDocument: 'after', upsert: true },
+  );
+
+  if (!updateResult.value) {
+    throw new Error('Failed to update cart item');
+  }
+
+  return normalizeCartItem(updateResult.value);
 }
 
 export async function removeFromCart(userId: string, bookId: string): Promise<boolean> {

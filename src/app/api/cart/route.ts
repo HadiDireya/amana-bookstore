@@ -1,11 +1,43 @@
 // src/app/api/cart/route.ts
 import { NextResponse } from 'next/server';
-import { clearCart, getCartWithBookData, removeCartItem, upsertCartItem } from '@/lib/cart-service';
-import { fetchBookById } from '@/lib/book-service';
+import {
+  addToCart,
+  clearCart,
+  fetchCartByUserId,
+  removeFromCart,
+  updateCartItemQuantity,
+} from '@/lib/cart-service';
+import { fetchBookById, fetchBooksByIds } from '@/lib/book-service';
+import { CartItemWithBook, CartResponse } from '@/app/types';
 
 function extractSessionId(request: Request): string | null {
   const { searchParams } = new URL(request.url);
   return searchParams.get('sessionId');
+}
+
+async function buildCartResponse(userId: string): Promise<CartResponse> {
+  const items = await fetchCartByUserId(userId);
+
+  if (items.length === 0) {
+    return {
+      sessionId: userId,
+      items: [],
+    };
+  }
+
+  const bookIds = Array.from(new Set(items.map((item) => item.bookId)));
+  const books = await fetchBooksByIds(bookIds);
+  const bookMap = new Map(books.map((book) => [String(book.id), book]));
+
+  const enriched = items.map((item) => ({
+    ...item,
+    book: bookMap.get(item.bookId) ?? null,
+  })) satisfies CartItemWithBook[];
+
+  return {
+    sessionId: userId,
+    items: enriched,
+  };
 }
 
 export async function GET(request: Request) {
@@ -18,7 +50,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const cart = await getCartWithBookData(sessionId);
+    const cart = await buildCartResponse(sessionId);
     return NextResponse.json(cart);
   } catch (err) {
     console.error('Error fetching cart items:', err);
@@ -50,7 +82,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const cart = await upsertCartItem(sessionId, normalizedBookId, quantity);
+    await addToCart({ userId: sessionId, bookId: normalizedBookId, quantity });
+    const cart = await buildCartResponse(sessionId);
     return NextResponse.json(cart);
   } catch (err) {
     console.error('Error adding item to cart:', err);
@@ -79,7 +112,8 @@ export async function PUT(request: Request) {
       );
     }
 
-    const cart = await upsertCartItem(sessionId, String(bookId), quantity);
+    await updateCartItemQuantity({ userId: sessionId, bookId: String(bookId), quantity });
+    const cart = await buildCartResponse(sessionId);
     return NextResponse.json(cart);
   } catch (err) {
     console.error('Error updating cart item:', err);
@@ -104,11 +138,19 @@ export async function DELETE(request: Request) {
     }
 
     if (!bookId) {
-      const cart = await clearCart(sessionId);
-      return NextResponse.json(cart);
+      await clearCart(sessionId);
+      return NextResponse.json({ sessionId, items: [] });
     }
 
-    const cart = await removeCartItem(sessionId, bookId);
+    const removed = await removeFromCart(sessionId, bookId);
+    if (!removed) {
+      return NextResponse.json(
+        { error: 'Cart item not found' },
+        { status: 404 },
+      );
+    }
+
+    const cart = await buildCartResponse(sessionId);
     return NextResponse.json(cart);
   } catch (err) {
     console.error('Error removing cart item:', err);
