@@ -18,7 +18,7 @@ function ensureProtocol(value: string, fallbackProtocol: 'http' | 'https' = 'htt
 }
 
 async function resolveBaseUrl(): Promise<string> {
-  const requestHeaders = headers();
+  const requestHeaders = await headers();
   const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
 
   if (host) {
