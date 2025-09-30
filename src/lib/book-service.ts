@@ -307,6 +307,24 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
   return ordered;
 }
 
+export async function fetchAllReviews(): Promise<Review[]> {
+  if (!isMongoConfigured) {
+    const store = getInMemoryBookStore();
+    const allReviews = Array.from(store.reviewsByBook.values()).reduce<Review[]>((acc, reviews) => {
+      reviews.forEach((review) => acc.push({ ...review }));
+      return acc;
+    }, []);
+
+    return allReviews.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
+  const client = await getMongoClient();
+  const db = client.db(DB_NAME);
+  const collection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
+  const docs = await collection.find({}).sort({ timestamp: -1 }).toArray();
+  return docs.map((doc) => stripMongoId(doc) as Review);
+}
+
 export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
   if (!isMongoConfigured) {
     const store = getInMemoryBookStore();

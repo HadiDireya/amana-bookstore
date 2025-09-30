@@ -1,19 +1,12 @@
 import { NextResponse } from 'next/server';
-import { fetchReviewsForBook, createReview, ValidationError } from '@/lib/book-service';
+import { fetchAllReviews, fetchReviewsForBook, createReview, ValidationError } from '@/lib/book-service';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const bookId = searchParams.get('bookId');
 
-  if (!bookId) {
-    return NextResponse.json(
-      { error: 'Missing bookId query parameter' },
-      { status: 400 },
-    );
-  }
-
   try {
-    const reviews = await fetchReviewsForBook(bookId);
+    const reviews = bookId ? await fetchReviewsForBook(bookId) : await fetchAllReviews();
     return NextResponse.json(reviews);
   } catch (err) {
     console.error('Error fetching reviews:', err);
