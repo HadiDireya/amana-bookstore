@@ -7,8 +7,8 @@ import { ResolvedCartItem } from '../types';
 
 interface CartItemProps {
   item: ResolvedCartItem;
-  onUpdateQuantity: (bookId: number, quantity: number) => void;
-  onRemoveItem: (bookId: number) => void;
+  onUpdateQuantity: (bookId: string, quantity: number) => void;
+  onRemoveItem: (bookId: string) => void;
 }
 
 const CartItem: React.FC<CartItemProps> = ({ item, onUpdateQuantity, onRemoveItem }) => {

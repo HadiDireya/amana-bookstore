@@ -1,7 +1,9 @@
 // src/app/data/books.ts
 import { Book } from '../types';
 
-export const books: Book[] = [
+type RawBook = Omit<Book, 'id'> & { id: number };
+
+const rawBooks: RawBook[] = [
   // Physics Textbooks
   {
     id: 1,
@@ -876,3 +878,8 @@ export const books: Book[] = [
     featured: true,
   }
 ];
+
+export const books: Book[] = rawBooks.map((book) => ({
+  ...book,
+  id: String(book.id),
+}));

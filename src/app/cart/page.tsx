@@ -32,7 +32,7 @@ export default function CartPage() {
     synchronizeCart();
   }, [synchronizeCart]);
 
-  const updateQuantity = async (bookId: number, newQuantity: number) => {
+  const updateQuantity = async (bookId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
     try {
       const cart = await updateCartItemQuantity(bookId, newQuantity);
@@ -44,7 +44,7 @@ export default function CartPage() {
     }
   };
 
-  const removeItem = async (bookId: number) => {
+  const removeItem = async (bookId: string) => {
     try {
       const cart = await removeCartItem(bookId);
       const validItems = cart.items.filter((item): item is ResolvedCartItem => item.book !== null) as ResolvedCartItem[];

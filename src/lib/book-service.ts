@@ -1,4 +1,5 @@
-import type { Collection } from 'mongodb';
+import type { Collection, Filter } from 'mongodb';
+import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import clientPromise from './mongodb';
 import { Book, Review } from '@/app/types';
@@ -11,14 +12,18 @@ const REVIEWS_COLLECTION = process.env.MONGODB_REVIEWS_COLLECTION || 'reviews';
 
 type BookDocument = Partial<Omit<Book, 'id'>> & {
   id?: string | number;
-  _id?: string | number;
+  _id?: string | number | ObjectId;
 };
 
 type ReviewDocument = Review & { _id?: string };
 
-const FALLBACK_BOOKS: ReadonlyArray<Book> = booksSeed as Book[];
+const FALLBACK_BOOKS: ReadonlyArray<Book> = (booksSeed as Array<Omit<Book, 'id'> & { id: string | number }>).map(
+  (book) => ({
+    ...book,
+    id: String(book.id),
+  }),
+);
 const FALLBACK_REVIEWS: ReadonlyArray<Review> = reviewsSeed as Review[];
-
 function toNumericId(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -30,32 +35,83 @@ function toNumericId(value: unknown): number {
   return parsed;
 }
 
+function toBookId(value: unknown): string {
+  if (value === null || value === undefined) {
+    throw new Error('Book id is missing');
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+    throw new Error('Book id must not be empty');
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (value instanceof ObjectId) {
+    return value.toHexString();
+  }
+
+  const stringified = String(value);
+  if (!stringified || stringified === '[object Object]') {
+    throw new Error(`Invalid book id value: ${String(value)}`);
+  }
+  return stringified;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    if (typeof value === 'string' && value.trim()) {
+      return [value.trim()];
+    }
+    return [];
+  }
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)))
+    .filter(Boolean);
+}
+
+function normalizeBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value === 'true' || value === '1') {
+    return true;
+  }
+  if (value === 'false' || value === '0') {
+    return false;
+  }
+  return fallback;
+}
+
 function normalizeBook(doc: BookDocument): Book {
   const { _id, id, ...rest } = doc;
-  void _id;
-
-  const numericId = toNumericId(id ?? _id);
+  const bookId = toBookId(id ?? _id);
 
   return {
     ...rest,
-    id: numericId,
-    title: rest.title ?? '',
-    author: rest.author ?? '',
-    description: rest.description ?? '',
-    price: rest.price ?? 0,
-    image: rest.image ?? '',
-    isbn: rest.isbn ?? '',
-    genre: rest.genre ?? [],
-    tags: rest.tags ?? [],
-    datePublished: rest.datePublished ?? '',
-    pages: rest.pages ?? 0,
-    language: rest.language ?? '',
-    publisher: rest.publisher ?? '',
-    rating: rest.rating ?? 0,
-    reviewCount: rest.reviewCount ?? 0,
-    inStock: rest.inStock ?? false,
-    featured: rest.featured ?? false,
-  } as Book;
+    id: bookId,
+    title: typeof rest.title === 'string' ? rest.title : '',
+    author: typeof rest.author === 'string' ? rest.author : '',
+    description: typeof rest.description === 'string' ? rest.description : '',
+    price: typeof rest.price === 'number' ? rest.price : Number(rest.price) || 0,
+    image: typeof rest.image === 'string' ? rest.image : '',
+    isbn: typeof rest.isbn === 'string' ? rest.isbn : '',
+    genre: normalizeStringArray(rest.genre),
+    tags: normalizeStringArray(rest.tags),
+    datePublished: typeof rest.datePublished === 'string' ? rest.datePublished : '',
+    pages: typeof rest.pages === 'number' ? rest.pages : Number(rest.pages) || 0,
+    language: typeof rest.language === 'string' ? rest.language : '',
+    publisher: typeof rest.publisher === 'string' ? rest.publisher : '',
+    rating: typeof rest.rating === 'number' ? rest.rating : Number(rest.rating) || 0,
+    reviewCount: typeof rest.reviewCount === 'number' ? rest.reviewCount : Number(rest.reviewCount) || 0,
+    inStock: normalizeBoolean(rest.inStock),
+    featured: normalizeBoolean(rest.featured),
+  } satisfies Book;
 }
 
 function normalizeBookSafely(doc: BookDocument): Book | null {
@@ -70,6 +126,7 @@ function normalizeBookSafely(doc: BookDocument): Book | null {
 function cloneBook(book: Book): Book {
   return {
     ...book,
+    id: String(book.id),
     genre: [...book.genre],
     tags: [...book.tags],
   };
@@ -96,6 +153,56 @@ function stripMongoId<T extends { _id?: unknown }>(doc: T): Omit<T, '_id'> {
   return rest;
 }
 
+function buildBookIdQuery(ids: Array<string | number>): Filter<BookDocument> | null {
+  if (ids.length === 0) {
+    return null;
+  }
+
+  const idCandidates = new Set<string | number>();
+  const objectIdCandidates = new Set<string>();
+
+  ids.forEach((value) => {
+    const stringValue = String(value);
+    idCandidates.add(stringValue);
+
+    const numeric = Number(stringValue);
+    if (Number.isFinite(numeric)) {
+      idCandidates.add(numeric);
+    }
+
+    if (ObjectId.isValid(stringValue)) {
+      try {
+        objectIdCandidates.add(new ObjectId(stringValue).toHexString());
+      } catch {
+        // ignore invalid conversions
+      }
+    }
+  });
+
+  const orConditions: Filter<BookDocument>[] = [];
+
+  const idValues = Array.from(idCandidates);
+  if (idValues.length > 0) {
+    orConditions.push({ id: { $in: idValues } });
+    orConditions.push({ _id: { $in: idValues } });
+  }
+
+  const objectIds = Array.from(objectIdCandidates).map((hex) => new ObjectId(hex));
+  if (objectIds.length > 0) {
+    orConditions.push({ _id: { $in: objectIds } });
+  }
+
+  if (orConditions.length === 0) {
+    return null;
+  }
+
+  if (orConditions.length === 1) {
+    return orConditions[0];
+  }
+
+  return { $or: orConditions };
+}
+
 export async function fetchAllBooks(): Promise<Book[]> {
   try {
     const client = await clientPromise;
@@ -116,13 +223,8 @@ export async function fetchBookById(id: string | number): Promise<Book | null> {
     const client = await clientPromise;
     const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
 
-    const numericId = Number(id);
-    const candidates = [id, String(id)];
-    if (Number.isFinite(numericId)) {
-      candidates.push(numericId);
-    }
-
-    const doc = await collection.findOne({ id: { $in: candidates } });
+    const query = buildBookIdQuery([id]);
+    const doc = query ? await collection.findOne(query) : null;
     const normalizedDoc = doc ? normalizeBookSafely(doc) : null;
     if (normalizedDoc) {
       return normalizedDoc;
@@ -143,14 +245,8 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
     const client = await clientPromise;
     const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
 
-    const candidates = ids.flatMap((value) => {
-      const numeric = Number(value);
-      return [value, String(value), Number.isFinite(numeric) ? numeric : undefined].filter(
-        (candidate): candidate is string | number => candidate !== undefined,
-      );
-    });
-
-    const docs = await collection.find({ id: { $in: candidates } }).toArray();
+    const query = buildBookIdQuery(ids);
+    const docs = query ? await collection.find(query).toArray() : [];
     const books = docs
       .map(normalizeBookSafely)
       .filter((book): book is Book => book !== null);
@@ -296,6 +392,7 @@ export async function createBook(payload: CreateBookInput): Promise<Book> {
   const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
 
   const numericId = payload.id !== undefined ? toNumericId(payload.id) : await getNextNumericBookId(collection);
+  const bookId = String(numericId);
 
   const title = ensureNonEmptyString(payload.title, 'title');
   const author = ensureNonEmptyString(payload.author, 'author');
@@ -327,7 +424,7 @@ export async function createBook(payload: CreateBookInput): Promise<Book> {
   }
 
   const book: Book = {
-    id: numericId,
+    id: bookId,
     title,
     author,
     description,
@@ -346,7 +443,7 @@ export async function createBook(payload: CreateBookInput): Promise<Book> {
     featured,
   };
 
-  await collection.insertOne({ ...book, _id: numericId });
+  await collection.insertOne({ ...book, id: bookId, _id: numericId });
   return book;
 }
 
@@ -393,15 +490,18 @@ export async function createReview(payload: CreateReviewInput): Promise<Review> 
     ? 0
     : Number((normalizedReviews.reduce((sum, current) => sum + current.rating, 0) / totalReviews).toFixed(1));
 
-  await booksCollection.updateOne(
-    { id: { $in: [book.id, String(book.id)] } },
-    {
-      $set: {
-        reviewCount: totalReviews,
-        rating: averageRating,
+  const updateFilter = buildBookIdQuery([book.id]);
+  if (updateFilter) {
+    await booksCollection.updateOne(
+      updateFilter,
+      {
+        $set: {
+          reviewCount: totalReviews,
+          rating: averageRating,
+        },
       },
-    },
-  );
+    );
+  }
 
   return review;
 }
