@@ -113,10 +113,10 @@ export async function addToCart(payload: AddToCartInput): Promise<CartItem> {
         $inc: { quantity: quantityToAdd },
         $set: { addedAt: now },
       },
-      { returnDocument: 'after' },
+      { returnDocument: 'after', includeResultMetadata: true },
     );
 
-    const updatedDoc = updateResult?.value;
+    const updatedDoc = updateResult.value;
     if (!updatedDoc) {
       throw new Error('Failed to update existing cart item');
     }
@@ -162,10 +162,10 @@ export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): 
         _id: newId,
       },
     },
-    { returnDocument: 'after', upsert: true },
+    { returnDocument: 'after', upsert: true, includeResultMetadata: true },
   );
 
-  const updatedDoc = updateResult?.value;
+  const updatedDoc = updateResult.value;
   if (!updatedDoc) {
     throw new Error('Failed to update cart item');
   }
