@@ -1,159 +1,137 @@
 import { randomUUID } from 'crypto';
-import { MongoClient } from 'mongodb';
 import clientPromise from './mongodb';
-import { CartItem, CartItemWithBook, CartResponse } from '@/app/types';
-import { fetchBooksByIds } from './book-service';
+import { ValidationError } from './book-service';
+import { CartItem } from '@/app/types';
 
-const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
-const CART_COLLECTION = process.env.MONGODB_CART_COLLECTION || 'cart';
+export const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
+export const CART_COLLECTION = process.env.MONGODB_CART_COLLECTION || 'cart';
 
-interface CartDocument {
-  sessionId: string;
-  items: CartItem[];
-  updatedAt: string;
+type CartItemDocument = {
+  id: string;
+  userId: string;
+  bookId: string;
+  quantity: number;
+  addedAt: string;
+  _id?: string;
+};
+
+export interface AddToCartInput {
+  userId: string;
+  bookId: string;
+  quantity?: number;
 }
 
-function sanitizeCart(doc: CartDocument | null, sessionId: string): CartDocument {
-  if (!doc) {
-    return {
-      sessionId,
-      items: [],
-      updatedAt: new Date().toISOString(),
-    };
+function stripMongoId(doc: CartItemDocument): CartItemDocument {
+  const { _id, ...rest } = doc;
+  void _id;
+  return rest;
+}
+
+function ensureNonEmptyString(value: unknown, field: string): string {
+  if (typeof value !== 'string') {
+    throw new ValidationError(`${field} must be a string`);
   }
-  return doc;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new ValidationError(`${field} must not be empty`);
+  }
+  return trimmed;
 }
 
-async function getCollection(client?: MongoClient) {
-  const resolvedClient = client ?? (await clientPromise);
-  return resolvedClient.db(DB_NAME).collection<CartDocument>(CART_COLLECTION);
+function ensureQuantity(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric < 1) {
+    throw new ValidationError('quantity must be a positive number');
+  }
+  return Math.floor(numeric);
 }
 
-export async function getOrCreateCart(sessionId: string): Promise<CartDocument> {
+function ensureTimestamp(value?: string): string {
+  if (!value) {
+    return new Date().toISOString();
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationError('addedAt must be a valid ISO date string');
+  }
+  return parsed.toISOString();
+}
+
+function normalizeCartItem(doc: CartItemDocument): CartItem {
+  const sanitized = stripMongoId(doc);
+  return {
+    id: ensureNonEmptyString(sanitized.id, 'id'),
+    bookId: ensureNonEmptyString(sanitized.bookId, 'bookId'),
+    quantity: ensureQuantity(sanitized.quantity),
+    addedAt: ensureTimestamp(sanitized.addedAt),
+  } satisfies CartItem;
+}
+
+async function getCollection() {
   const client = await clientPromise;
-  const collection = await getCollection(client);
+  return client.db(DB_NAME).collection<CartItemDocument>(CART_COLLECTION);
+}
 
-  const existing = await collection.findOne({ sessionId });
+export async function fetchCartByUserId(userId: string): Promise<CartItem[]> {
+  const normalizedUserId = ensureNonEmptyString(userId, 'userId');
+  const collection = await getCollection();
+  const docs = await collection.find({ userId: normalizedUserId }).sort({ addedAt: -1 }).toArray();
+  return docs.map((doc) => normalizeCartItem(doc));
+}
+
+export async function addToCart(payload: AddToCartInput): Promise<CartItem> {
+  if (!payload) {
+    throw new ValidationError('payload is required');
+  }
+
+  const userId = ensureNonEmptyString(payload.userId, 'userId');
+  const bookId = ensureNonEmptyString(payload.bookId, 'bookId');
+  const quantityToAdd = ensureQuantity(payload.quantity ?? 1);
+  const now = new Date().toISOString();
+
+  const collection = await getCollection();
+  const existing = await collection.findOne({ userId, bookId });
+
   if (existing) {
-    return existing;
+    const updateResult = await collection.findOneAndUpdate(
+      { userId, bookId },
+      {
+        $inc: { quantity: quantityToAdd },
+        $set: { addedAt: now },
+      },
+      { returnDocument: 'after' },
+    );
+
+    if (!updateResult.value) {
+      throw new Error('Failed to update existing cart item');
+    }
+
+    return normalizeCartItem(updateResult.value);
   }
 
-  const now = new Date().toISOString();
-  const cart: CartDocument = {
-    sessionId,
-    items: [],
-    updatedAt: now,
+  const cartItem: CartItemDocument = {
+    id: `cart-${randomUUID()}`,
+    userId,
+    bookId,
+    quantity: quantityToAdd,
+    addedAt: now,
   };
 
-  await collection.insertOne(cart);
-  return cart;
+  await collection.insertOne({ ...cartItem, _id: cartItem.id });
+  return normalizeCartItem(cartItem);
 }
 
-export async function getCartWithBookData(sessionId: string): Promise<CartResponse> {
-  const client = await clientPromise;
-  const collection = await getCollection(client);
-  const doc = await collection.findOne({ sessionId });
-  const cart = sanitizeCart(doc, sessionId);
-
-  if (cart.items.length === 0) {
-    return {
-      sessionId,
-      items: [],
-    };
-  }
-
-  const bookIds = [...new Set(cart.items.map(item => item.bookId))];
-  const books = await fetchBooksByIds(bookIds);
-  const bookMap = new Map(books.map(book => [String(book.id), book]));
-
-  const enrichedItems: CartItemWithBook[] = cart.items.map(item => ({
-    ...item,
-    book: bookMap.get(item.bookId) ?? null,
-  }));
-
-  return {
-    sessionId,
-    items: enrichedItems,
-  };
+export async function removeFromCart(userId: string, bookId: string): Promise<boolean> {
+  const normalizedUserId = ensureNonEmptyString(userId, 'userId');
+  const normalizedBookId = ensureNonEmptyString(bookId, 'bookId');
+  const collection = await getCollection();
+  const result = await collection.deleteOne({ userId: normalizedUserId, bookId: normalizedBookId });
+  return result.deletedCount === 1;
 }
 
-export async function upsertCartItem(sessionId: string, bookId: string, quantity: number): Promise<CartResponse> {
-  if (quantity < 1) {
-    throw new Error('Quantity must be at least 1');
-  }
-
-  const client = await clientPromise;
-  const collection = await getCollection(client);
-  const cart = await getOrCreateCart(sessionId);
-  const now = new Date().toISOString();
-
-  const items = [...cart.items];
-  const existingIndex = items.findIndex(item => item.bookId === bookId);
-  if (existingIndex >= 0) {
-    items[existingIndex] = {
-      ...items[existingIndex],
-      quantity,
-      addedAt: now,
-    };
-  } else {
-    const cartItem: CartItem = {
-      id: `${bookId}-${randomUUID()}`,
-      bookId,
-      quantity,
-      addedAt: now,
-    };
-    items.push(cartItem);
-  }
-
-  await collection.updateOne(
-    { sessionId },
-    {
-      $set: {
-        items,
-        updatedAt: now,
-      },
-    },
-  );
-
-  return getCartWithBookData(sessionId);
-}
-
-export async function removeCartItem(sessionId: string, bookId: string): Promise<CartResponse> {
-  const client = await clientPromise;
-  const collection = await getCollection(client);
-
-  await collection.updateOne(
-    { sessionId },
-    {
-      $pull: {
-        items: { bookId },
-      },
-      $set: {
-        updatedAt: new Date().toISOString(),
-      },
-    },
-  );
-
-  return getCartWithBookData(sessionId);
-}
-
-export async function clearCart(sessionId: string): Promise<CartResponse> {
-  const client = await clientPromise;
-  const collection = await getCollection(client);
-
-  await collection.updateOne(
-    { sessionId },
-    {
-      $set: {
-        items: [],
-        updatedAt: new Date().toISOString(),
-      },
-    },
-    { upsert: true },
-  );
-
-  return {
-    sessionId,
-    items: [],
-  };
+export async function clearCart(userId: string): Promise<number> {
+  const normalizedUserId = ensureNonEmptyString(userId, 'userId');
+  const collection = await getCollection();
+  const result = await collection.deleteMany({ userId: normalizedUserId });
+  return result.deletedCount ?? 0;
 }

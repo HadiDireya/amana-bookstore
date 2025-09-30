@@ -3,12 +3,10 @@ import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import clientPromise from './mongodb';
 import { Book, Review } from '@/app/types';
-import booksSeed from '../../data/books.json';
-import reviewsSeed from '../../data/reviews.json';
 
-const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
-const BOOKS_COLLECTION = process.env.MONGODB_BOOKS_COLLECTION || 'books';
-const REVIEWS_COLLECTION = process.env.MONGODB_REVIEWS_COLLECTION || 'reviews';
+export const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
+export const BOOKS_COLLECTION = process.env.MONGODB_BOOKS_COLLECTION || 'books';
+export const REVIEWS_COLLECTION = process.env.MONGODB_REVIEWS_COLLECTION || 'reviews';
 
 type BookDocument = Partial<Omit<Book, 'id'>> & {
   id?: string | number;
@@ -17,20 +15,20 @@ type BookDocument = Partial<Omit<Book, 'id'>> & {
 
 type ReviewDocument = Review & { _id?: string };
 
-const FALLBACK_BOOKS: ReadonlyArray<Book> = (booksSeed as Array<Omit<Book, 'id'> & { id: string | number }>).map(
-  (book) => ({
-    ...book,
-    id: String(book.id),
-  }),
-);
-const FALLBACK_REVIEWS: ReadonlyArray<Review> = reviewsSeed as Review[];
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
 function toNumericId(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
   }
   const parsed = Number(typeof value === 'string' ? value : String(value ?? ''));
   if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid book id value: ${String(value)}`);
+    throw new ValidationError(`Invalid book id value: ${String(value)}`);
   }
   return parsed;
 }
@@ -123,30 +121,6 @@ function normalizeBookSafely(doc: BookDocument): Book | null {
   }
 }
 
-function cloneBook(book: Book): Book {
-  return {
-    ...book,
-    id: String(book.id),
-    genre: [...book.genre],
-    tags: [...book.tags],
-  };
-}
-
-function getFallbackBooks(): Book[] {
-  return FALLBACK_BOOKS.map(cloneBook);
-}
-
-function findFallbackBookById(id: string | number): Book | null {
-  const normalized = String(id);
-  const match = FALLBACK_BOOKS.find(book => String(book.id) === normalized);
-  return match ? cloneBook(match) : null;
-}
-
-function getFallbackReviews(bookId: string | number): Review[] {
-  const normalized = String(bookId);
-  return FALLBACK_REVIEWS.filter(review => review.bookId === normalized).map(review => ({ ...review }));
-}
-
 function stripMongoId<T extends { _id?: unknown }>(doc: T): Omit<T, '_id'> {
   const { _id, ...rest } = doc;
   void _id;
@@ -204,36 +178,26 @@ function buildBookIdQuery(ids: Array<string | number>): Filter<BookDocument> | n
 }
 
 export async function fetchAllBooks(): Promise<Book[]> {
-  try {
-    const client = await clientPromise;
-    const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
-    const docs = await collection.find({}).toArray();
-    const books = docs
-      .map(normalizeBookSafely)
-      .filter((book): book is Book => book !== null);
-    return books.length > 0 ? books : getFallbackBooks();
-  } catch (err) {
-    console.error('Failed to fetch all books', err);
-    return getFallbackBooks();
-  }
+  const client = await clientPromise;
+  const db = client.db(DB_NAME);
+  const docs = await db.collection<BookDocument>(BOOKS_COLLECTION).find({}).toArray();
+  return docs
+    .map(normalizeBookSafely)
+    .filter((book): book is Book => book !== null);
 }
 
 export async function fetchBookById(id: string | number): Promise<Book | null> {
-  try {
-    const client = await clientPromise;
-    const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
+  const client = await clientPromise;
+  const db = client.db(DB_NAME);
+  const collection = db.collection<BookDocument>(BOOKS_COLLECTION);
 
-    const query = buildBookIdQuery([id]);
-    const doc = query ? await collection.findOne(query) : null;
-    const normalizedDoc = doc ? normalizeBookSafely(doc) : null;
-    if (normalizedDoc) {
-      return normalizedDoc;
-    }
-    return findFallbackBookById(id);
-  } catch (err) {
-    console.error('Failed to fetch book by id', err);
-    return findFallbackBookById(id);
+  const query = buildBookIdQuery([id]);
+  if (!query) {
+    return null;
   }
+
+  const doc = await collection.findOne(query);
+  return doc ? normalizeBookSafely(doc) : null;
 }
 
 export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book[]> {
@@ -241,55 +205,36 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
     return [];
   }
 
-  try {
-    const client = await clientPromise;
-    const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
+  const client = await clientPromise;
+  const db = client.db(DB_NAME);
+  const collection = db.collection<BookDocument>(BOOKS_COLLECTION);
 
-    const query = buildBookIdQuery(ids);
-    const docs = query ? await collection.find(query).toArray() : [];
-    const books = docs
-      .map(normalizeBookSafely)
-      .filter((book): book is Book => book !== null);
-    const resolvedIds = new Set(books.map(book => String(book.id)));
-    const fallbackBooks = ids
-      .map(id => {
-        if (resolvedIds.has(String(id))) {
-          return null;
-        }
-        return findFallbackBookById(id);
-      })
-      .filter((book): book is Book => book !== null);
-
-    const combined = books.concat(fallbackBooks);
-    return combined.length > 0 ? combined : getFallbackBooks();
-  } catch (err) {
-    console.error('Failed to fetch books by ids', err);
-    return ids.length > 0
-      ? ids
-          .map(findFallbackBookById)
-          .filter((book): book is Book => book !== null)
-      : getFallbackBooks();
+  const query = buildBookIdQuery(ids);
+  if (!query) {
+    return [];
   }
+
+  const docs = await collection.find(query).toArray();
+  const books = docs.map(normalizeBookSafely).filter((book): book is Book => book !== null);
+  const booksById = new Map(books.map((book) => [String(book.id), book]));
+
+  const ordered: Book[] = [];
+  ids.forEach((bookId) => {
+    const match = booksById.get(String(bookId));
+    if (match) {
+      ordered.push(match);
+    }
+  });
+
+  return ordered;
 }
 
 export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
-  try {
-    const client = await clientPromise;
-    const collection = client.db(DB_NAME).collection<ReviewDocument>(REVIEWS_COLLECTION);
-    const docs = await collection.find({ bookId }).sort({ timestamp: -1 }).toArray();
-    const reviews = docs.map(doc => stripMongoId(doc) as Review);
-    return reviews.length > 0 ? reviews : getFallbackReviews(bookId);
-  } catch (err) {
-    console.error('Failed to fetch reviews for book', err);
-    return getFallbackReviews(bookId);
-  }
-}
-
-export class ValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ValidationError';
-  }
+  const client = await clientPromise;
+  const db = client.db(DB_NAME);
+  const collection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
+  const docs = await collection.find({ bookId }).sort({ timestamp: -1 }).toArray();
+  return docs.map((doc) => stripMongoId(doc) as Review);
 }
 
 export interface CreateBookInput extends Partial<Omit<Book, 'id'>> {
@@ -375,10 +320,14 @@ function ensureTimestamp(value: unknown, field: string): string {
 }
 
 async function getNextNumericBookId(collection: Collection<BookDocument>): Promise<number> {
-  const docs = await collection.find({}, { projection: { id: 1 } }).toArray();
+  const docs = await collection.find({}, { projection: { id: 1, _id: 1 } }).toArray();
   const maxId = docs.reduce((max, doc) => {
+    const candidate = doc.id ?? doc._id;
+    if (candidate === undefined) {
+      return max;
+    }
     try {
-      const numeric = toNumericId(doc.id ?? doc._id);
+      const numeric = toNumericId(candidate);
       return Math.max(max, numeric);
     } catch {
       return max;
@@ -389,7 +338,8 @@ async function getNextNumericBookId(collection: Collection<BookDocument>): Promi
 
 export async function createBook(payload: CreateBookInput): Promise<Book> {
   const client = await clientPromise;
-  const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
+  const db = client.db(DB_NAME);
+  const collection = db.collection<BookDocument>(BOOKS_COLLECTION);
 
   const numericId = payload.id !== undefined ? toNumericId(payload.id) : await getNextNumericBookId(collection);
   const bookId = String(numericId);
@@ -416,7 +366,7 @@ export async function createBook(payload: CreateBookInput): Promise<Book> {
     $or: [
       { id: numericId },
       { id: String(numericId) },
-      { isbn }
+      { isbn },
     ],
   });
   if (existing) {
@@ -443,7 +393,7 @@ export async function createBook(payload: CreateBookInput): Promise<Book> {
     featured,
   };
 
-  await collection.insertOne({ ...book, id: bookId, _id: numericId });
+  await collection.insertOne({ ...book, _id: numericId });
   return book;
 }
 
@@ -459,8 +409,9 @@ export async function createReview(payload: CreateReviewInput): Promise<Review> 
   }
 
   const client = await clientPromise;
-  const reviewsCollection = client.db(DB_NAME).collection<ReviewDocument>(REVIEWS_COLLECTION);
-  const booksCollection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
+  const db = client.db(DB_NAME);
+  const reviewsCollection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
+  const booksCollection = db.collection<BookDocument>(BOOKS_COLLECTION);
 
   const reviewId = payload.id ? ensureNonEmptyString(payload.id, 'id') : `review-${randomUUID()}`;
 
@@ -483,7 +434,7 @@ export async function createReview(payload: CreateReviewInput): Promise<Review> 
   await reviewsCollection.insertOne({ ...review, _id: review.id });
 
   const normalizedReviews = (await reviewsCollection.find({ bookId: review.bookId }).toArray())
-    .map(doc => stripMongoId(doc) as Review);
+    .map((doc) => stripMongoId(doc) as Review);
 
   const totalReviews = normalizedReviews.length;
   const averageRating = totalReviews === 0
