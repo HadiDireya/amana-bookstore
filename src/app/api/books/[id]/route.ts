@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
 import { fetchBookById } from '@/lib/book-service';
 
-type RouteContext = { params: { id?: string } };
+type RouteParams = Record<string, string | string[] | undefined>;
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(
+  _request: Request,
+  context: { params?: Promise<RouteParams> },
+) {
   try {
-    const id = context.params?.id;
+    const params = context.params ? await context.params : undefined;
+    const idValue = params?.id;
+    const id = Array.isArray(idValue) ? idValue[0] : idValue;
     if (!id) {
       return NextResponse.json(
         { error: 'Book id missing from route params' },
