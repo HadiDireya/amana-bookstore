@@ -1,16 +1,9 @@
 // src/app/page.tsx
-'use client';
-
-import { useState } from 'react';
 import BookGrid from './components/BookGrid';
-import { books } from './data/books';
+import { fetchAllBooks } from '@/lib/book-service';
 
-export default function HomePage() {
-  // Simple cart handler for demo purposes
-  const handleAddToCart = (bookId: string) => {
-    console.log(`Added book ${bookId} to cart`);
-    // Here you would typically dispatch to a cart state or call an API
-  };
+export default async function HomePage() {
+  const books = await fetchAllBooks();
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -23,7 +16,7 @@ export default function HomePage() {
       </section>
 
       {/* Book Grid */}
-      <BookGrid books={books} onAddToCart={handleAddToCart} />
+      <BookGrid books={books} />
     </div>
   );
 }

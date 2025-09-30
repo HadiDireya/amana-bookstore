@@ -5,40 +5,36 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { useState, useEffect } from 'react';
-import { CartItem } from '../types';
+import { CartResponse } from '../types';
+import { fetchCart, subscribeToCartUpdates } from '@/lib/client/cart-api';
 
 const Navbar: React.FC = () => {
   const [cartItemCount, setCartItemCount] = useState(0);
   const pathname = usePathname();
 
   useEffect(() => {
-    // This function updates the cart count from localStorage.
-    // It's designed to run on the client side only.
-    const updateCartCount = () => {
-      const storedCart = localStorage.getItem('cart');
-      if (storedCart) {
-        try {
-          const cart: CartItem[] = JSON.parse(storedCart);
-          const count = cart.reduce((total, item) => total + item.quantity, 0);
-          setCartItemCount(count);
-        } catch (error) {
-          console.error('Failed to parse cart from localStorage', error);
-          setCartItemCount(0);
-        }
-      } else {
-        setCartItemCount(0);
-      }
+    let isMounted = true;
+
+    const syncFromCart = (cart: CartResponse) => {
+      if (!isMounted) return;
+      const count = cart.items.reduce((total, item) => total + item.quantity, 0);
+      setCartItemCount(count);
     };
 
-    // Initial update
-    updateCartCount();
+    const unsubscribe = subscribeToCartUpdates(syncFromCart);
 
-    // Listen for custom event to update cart count
-    window.addEventListener('cartUpdated', updateCartCount);
+    fetchCart()
+      .then(syncFromCart)
+      .catch((error) => {
+        console.error('Failed to load cart count', error);
+        if (isMounted) {
+          setCartItemCount(0);
+        }
+      });
 
-    // Clean up the event listener
     return () => {
-      window.removeEventListener('cartUpdated', updateCartCount);
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
   

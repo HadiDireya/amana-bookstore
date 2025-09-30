@@ -4,13 +4,13 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Book } from '../types';
+import { addItemToCart } from '@/lib/client/cart-api';
 
 interface BookCardProps {
   book: Book;
-  onAddToCart?: (bookId: string) => void;
 }
 
-const BookCard: React.FC<BookCardProps> = ({ book, onAddToCart }) => {
+const BookCard: React.FC<BookCardProps> = ({ book }) => {
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -67,9 +67,7 @@ const BookCard: React.FC<BookCardProps> = ({ book, onAddToCart }) => {
       // Simulate API call delay
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      if (onAddToCart) {
-        onAddToCart(book.id);
-      }
+      await addItemToCart(book.id);
       
       // Show success feedback
       setShowSuccess(true);

@@ -3,12 +3,12 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Book } from '../types';
+import { ResolvedCartItem } from '../types';
 
 interface CartItemProps {
-  item: { book: Book; quantity: number };
-  onUpdateQuantity: (bookId: string, quantity: number) => void;
-  onRemoveItem: (bookId: string) => void;
+  item: ResolvedCartItem;
+  onUpdateQuantity: (bookId: number, quantity: number) => void;
+  onRemoveItem: (bookId: number) => void;
 }
 
 const CartItem: React.FC<CartItemProps> = ({ item, onUpdateQuantity, onRemoveItem }) => {

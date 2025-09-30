@@ -1,88 +1,91 @@
 // src/app/cart/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import CartItem from '../components/CartItem';
-import { books } from '../data/books';
-import { Book, CartItem as CartItemType } from '../types';
+import { ResolvedCartItem } from '../types';
+import { clearCartItems, fetchCart, removeCartItem, updateCartItemQuantity } from '@/lib/client/cart-api';
 
 export default function CartPage() {
-  const [cartItems, setCartItems] = useState<{ book: Book; quantity: number }[]>([]);
+  const [cartItems, setCartItems] = useState<ResolvedCartItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Load cart from localStorage
-    const storedCart = localStorage.getItem('cart');
-    if (storedCart) {
-      try {
-        const cart: CartItemType[] = JSON.parse(storedCart);
-        const itemsWithBooks = cart
-          .map(item => {
-            const book = books.find(b => b.id === item.bookId);
-            return book ? { book, quantity: item.quantity } : null;
-          })
-          .filter((item): item is { book: Book; quantity: number } => item !== null);
-        
-        setCartItems(itemsWithBooks);
-      } catch (error) {
-        console.error('Failed to parse cart from localStorage', error);
-        setCartItems([]);
-      }
+  const synchronizeCart = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const cart = await fetchCart();
+      const validItems = cart.items.filter((item): item is ResolvedCartItem => item.book !== null) as ResolvedCartItem[];
+      setCartItems(validItems);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to load cart items', err);
+      setError(err instanceof Error ? err.message : 'Failed to load cart items');
+      setCartItems([]);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
-  const updateQuantity = (bookId: string, newQuantity: number) => {
+  useEffect(() => {
+    synchronizeCart();
+  }, [synchronizeCart]);
+
+  const updateQuantity = async (bookId: number, newQuantity: number) => {
     if (newQuantity < 1) return;
-
-    // Update local state
-    const updatedItems = cartItems.map(item => 
-      item.book.id === bookId ? { ...item, quantity: newQuantity } : item
-    );
-    setCartItems(updatedItems);
-
-    // Update localStorage
-    const cartForStorage = updatedItems.map(item => ({
-      id: `${item.book.id}-${Date.now()}`,
-      bookId: item.book.id,
-      quantity: item.quantity,
-      addedAt: new Date().toISOString()
-    }));
-    localStorage.setItem('cart', JSON.stringify(cartForStorage));
-    
-    // Notify navbar
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
+    try {
+      const cart = await updateCartItemQuantity(bookId, newQuantity);
+      const validItems = cart.items.filter((item): item is ResolvedCartItem => item.book !== null) as ResolvedCartItem[];
+      setCartItems(validItems);
+    } catch (err) {
+      console.error('Failed to update cart item', err);
+      setError(err instanceof Error ? err.message : 'Failed to update cart item');
+    }
   };
 
-  const removeItem = (bookId: string) => {
-    // Update local state
-    const updatedItems = cartItems.filter(item => item.book.id !== bookId);
-    setCartItems(updatedItems);
-
-    // Update localStorage
-    const cartForStorage = updatedItems.map(item => ({
-      id: `${item.book.id}-${Date.now()}`,
-      bookId: item.book.id,
-      quantity: item.quantity,
-      addedAt: new Date().toISOString()
-    }));
-    localStorage.setItem('cart', JSON.stringify(cartForStorage));
-    
-    // Notify navbar
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
+  const removeItem = async (bookId: number) => {
+    try {
+      const cart = await removeCartItem(bookId);
+      const validItems = cart.items.filter((item): item is ResolvedCartItem => item.book !== null) as ResolvedCartItem[];
+      setCartItems(validItems);
+    } catch (err) {
+      console.error('Failed to remove cart item', err);
+      setError(err instanceof Error ? err.message : 'Failed to remove cart item');
+    }
   };
 
-  const clearCart = () => {
-    setCartItems([]);
-    localStorage.removeItem('cart');
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
+  const clearCart = async () => {
+    try {
+      await clearCartItems();
+      setCartItems([]);
+    } catch (err) {
+      console.error('Failed to clear cart', err);
+      setError(err instanceof Error ? err.message : 'Failed to clear cart');
+    }
   };
 
-  const totalPrice = cartItems.reduce((total, item) => total + (item.book.price * item.quantity), 0);
+  const totalPrice = cartItems.reduce((total, item) => {
+    if (!item.book) return total;
+    return total + item.book.price * item.quantity;
+  }, 0);
 
   if (isLoading) {
     return <div className="text-center py-10">Loading...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-10">
+        <h2 className="text-xl font-semibold text-red-500 mb-4">{error}</h2>
+        <button
+          onClick={synchronizeCart}
+          className="bg-blue-500 text-white px-6 py-3 rounded-md hover:bg-blue-600 transition-colors cursor-pointer"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (

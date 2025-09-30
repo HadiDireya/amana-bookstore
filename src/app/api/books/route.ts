@@ -1,16 +1,38 @@
 // src/app/api/books/route.ts
 import { NextResponse } from 'next/server';
-import { books } from '../../data/books';
+import { fetchAllBooks, createBook, ValidationError } from '@/lib/book-service';
 
 // GET /api/books - Return all books
 export async function GET() {
   try {
+    const books = await fetchAllBooks();
     return NextResponse.json(books);
   } catch (err) {
     console.error('Error fetching books:', err);
     return NextResponse.json(
       { error: 'Failed to fetch books' },
       { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const payload = await request.json();
+    const book = await createBook(payload);
+    return NextResponse.json(book, { status: 201 });
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return NextResponse.json(
+        { error: err.message },
+        { status: 400 },
+      );
+    }
+
+    console.error('Error creating book:', err);
+    return NextResponse.json(
+      { error: 'Failed to create book' },
+      { status: 500 },
     );
   }
 }

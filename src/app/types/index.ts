@@ -1,7 +1,7 @@
 // src/app/types/index.ts
 
 export interface Book {
-  id: string;
+  id: number;
   title: string;
   author: string;
   description: string;
@@ -26,6 +26,17 @@ export interface CartItem {
   quantity: number;
   addedAt: string;
 }
+
+export interface CartItemWithBook extends CartItem {
+  book: Book | null;
+}
+
+export interface CartResponse {
+  sessionId: string;
+  items: CartItemWithBook[];
+}
+
+export type ResolvedCartItem = CartItemWithBook & { book: Book };
 
 export interface Review {
   id: string;

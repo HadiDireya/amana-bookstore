@@ -4,7 +4,7 @@ import { Book } from '../types';
 export const books: Book[] = [
   // Physics Textbooks
   {
-    id: '1',
+    id: 1,
     title: 'Fundamentals of Classical Mechanics',
     author: 'Dr. Ahmad Al-Kindi',
     description: 'A comprehensive introduction to classical mechanics covering Newtonian dynamics, conservation laws, rotational motion, and oscillations with modern applications.',
@@ -23,7 +23,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '2',
+    id: 2,
     title: 'Quantum Physics: Principles and Applications',
     author: 'Prof. Fatima Al-Haytham',
     description: 'An advanced textbook exploring quantum mechanics, wave functions, uncertainty principles, and quantum applications in modern technology.',
@@ -43,7 +43,7 @@ export const books: Book[] = [
   },
   // Astronomy Textbooks
   {
-    id: '3',
+    id: 3,
     title: 'Stellar Astrophysics and Galactic Structure',
     author: 'Dr. Omar Al-Battani',
     description: 'Explores stellar evolution, galactic dynamics, and cosmological structures with emphasis on observational techniques and theoretical frameworks.',
@@ -62,7 +62,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '4',
+    id: 4,
     title: 'Planetary Sciences and Solar System Dynamics',
     author: 'Prof. Zahra Al-Zarqali',
     description: 'Comprehensive study of planetary formation, atmospheric dynamics, and comparative planetology across our solar system and exoplanets.',
@@ -82,7 +82,7 @@ export const books: Book[] = [
   },
   // Architecture Textbooks
   {
-    id: '5',
+    id: 5,
     title: 'Islamic Architecture: Geometry and Design Principles',
     author: 'Architect Yusuf Al-Andalusi',
     description: 'Explores the mathematical foundations and geometric principles underlying Islamic architectural traditions, from classical to contemporary applications.',
@@ -101,7 +101,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '6',
+    id: 6,
     title: 'Sustainable Urban Planning and Green Architecture',
     author: 'Dr. Layla Al-Dimashqi',
     description: 'Modern approaches to sustainable urban development, green building technologies, and environmentally conscious architectural design.',
@@ -121,7 +121,7 @@ export const books: Book[] = [
   },
   // Mathematics Textbooks
   {
-    id: '7',
+    id: 7,
     title: 'Advanced Calculus and Mathematical Analysis',
     author: 'Prof. Hassan Al-Jabir',
     description: 'Rigorous treatment of real analysis, multivariable calculus, and advanced mathematical techniques for engineering and physics applications.',
@@ -140,7 +140,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '8',
+    id: 8,
     title: 'Linear Algebra and Matrix Theory',
     author: 'Dr. Mariam Al-Isfahani',
     description: 'Comprehensive introduction to vector spaces, linear transformations, eigenvalues, and applications in engineering and computer science.',
@@ -160,7 +160,7 @@ export const books: Book[] = [
   },
   // Biology Textbooks
   {
-    id: '9',
+    id: 9,
     title: 'Molecular Biology and Genetic Engineering',
     author: 'Prof. Samir Al-Razi',
     description: 'Modern molecular biology techniques, DNA technology, protein synthesis, and applications in biotechnology and medicine.',
@@ -179,7 +179,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '10',
+    id: 10,
     title: 'Ecology and Environmental Biology',
     author: 'Dr. Amina Al-Baghdadi',
     description: 'Comprehensive study of ecological principles, population dynamics, biodiversity conservation, and environmental impact assessment.',
@@ -199,7 +199,7 @@ export const books: Book[] = [
   },
   // Chemistry Textbooks
   {
-    id: '11',
+    id: 11,
     title: 'Organic Chemistry: Structure and Reactivity',
     author: 'Prof. Khalil Al-Dimashqi',
     description: 'Systematic approach to organic chemistry covering reaction mechanisms, synthesis strategies, and spectroscopic analysis techniques.',
@@ -218,7 +218,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '12',
+    id: 12,
     title: 'Physical Chemistry: Thermodynamics and Kinetics',
     author: 'Dr. Nadia Al-Turani',
     description: 'Advanced physical chemistry covering thermodynamic principles, chemical kinetics, quantum chemistry, and statistical mechanics.',
@@ -238,7 +238,7 @@ export const books: Book[] = [
   },
   // Computer Science
   {
-    id: '13',
+    id: 13,
     title: 'Algorithms and Data Structures',
     author: 'Prof. Tariq Al-Jazari',
     description: 'Comprehensive guide to fundamental algorithms, data structures, complexity analysis, and computational problem-solving techniques.',
@@ -258,7 +258,7 @@ export const books: Book[] = [
   },
   // Engineering
   {
-    id: '14',
+    id: 14,
     title: 'Engineering Thermodynamics and Heat Transfer',
     author: 'Dr. Rashid Al-Karkhi',
     description: 'Fundamental principles of thermodynamics, heat transfer mechanisms, and energy conversion systems in engineering applications.',
@@ -278,7 +278,7 @@ export const books: Book[] = [
   },
   // Earth Sciences
   {
-    id: '15',
+    id: 15,
     title: 'Geophysics and Earth System Sciences',
     author: 'Prof. Leila Al-Mashriqiya',
     description: 'Comprehensive study of Earth\'s physical processes, seismology, plate tectonics, and climate systems with modern research applications.',
@@ -298,7 +298,7 @@ export const books: Book[] = [
   },
   // Additional Physics Books
   {
-    id: '16',
+    id: 16,
     title: 'Statistical Mechanics and Thermodynamics',
     author: 'Dr. Amjad Al-Baghdadi',
     description: 'Advanced treatment of statistical mechanics, entropy, phase transitions, and their applications in modern physics and engineering.',
@@ -317,7 +317,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '17',
+    id: 17,
     title: 'Electromagnetic Fields and Waves',
     author: 'Prof. Salma Al-Razi',
     description: 'Comprehensive study of electromagnetic theory, Maxwell\'s equations, wave propagation, and applications in modern technology.',
@@ -337,7 +337,7 @@ export const books: Book[] = [
   },
   // Additional Mathematics Books
   {
-    id: '18',
+    id: 18,
     title: 'Differential Equations and Dynamical Systems',
     author: 'Dr. Yusuf Al-Khwarizmi',
     description: 'Modern approach to differential equations, stability theory, chaos, and applications to biological and physical systems.',
@@ -356,7 +356,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '19',
+    id: 19,
     title: 'Number Theory and Cryptography',
     author: 'Prof. Zahra Al-Tabari',
     description: 'Introduction to number theory with applications to modern cryptography, including RSA, elliptic curves, and quantum cryptography.',
@@ -375,7 +375,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '20',
+    id: 20,
     title: 'Topology and Algebraic Geometry',
     author: 'Dr. Hassan Al-Andalusi',
     description: 'Advanced mathematics covering topological spaces, manifolds, and algebraic geometric structures with modern applications.',
@@ -395,7 +395,7 @@ export const books: Book[] = [
   },
   // Additional Biology Books
   {
-    id: '21',
+    id: 21,
     title: 'Neuroscience and Brain Function',
     author: 'Prof. Layla Al-Zahrawi',
     description: 'Comprehensive study of neuroscience, brain anatomy, neural networks, and cognitive functions with modern research findings.',
@@ -414,7 +414,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '22',
+    id: 22,
     title: 'Microbiology and Infectious Diseases',
     author: 'Dr. Omar Al-Kindi',
     description: 'Modern microbiology covering bacterial, viral, and fungal pathogens, immune responses, and antimicrobial strategies.',
@@ -433,7 +433,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '23',
+    id: 23,
     title: 'Plant Biology and Botany',
     author: 'Prof. Fatima Al-Dimashqi',
     description: 'Comprehensive botany textbook covering plant anatomy, physiology, genetics, and ecological interactions.',
@@ -453,7 +453,7 @@ export const books: Book[] = [
   },
   // Additional Chemistry Books
   {
-    id: '24',
+    id: 24,
     title: 'Analytical Chemistry and Instrumentation',
     author: 'Dr. Khalil Al-Shirazi',
     description: 'Modern analytical chemistry techniques, spectroscopy, chromatography, and advanced instrumentation methods.',
@@ -472,7 +472,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '25',
+    id: 25,
     title: 'Inorganic Chemistry and Materials Science',
     author: 'Prof. Amina Al-Baghdadi',
     description: 'Advanced inorganic chemistry covering coordination compounds, solid-state chemistry, and materials applications.',
@@ -492,7 +492,7 @@ export const books: Book[] = [
   },
   // Additional Computer Science Books
   {
-    id: '26',
+    id: 26,
     title: 'Machine Learning and Artificial Intelligence',
     author: 'Dr. Tariq Al-Khwarizmi',
     description: 'Comprehensive introduction to machine learning algorithms, neural networks, and AI applications in modern technology.',
@@ -511,7 +511,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '27',
+    id: 27,
     title: 'Database Systems and Big Data',
     author: 'Prof. Nadia Al-Isfahani',
     description: 'Modern database design, NoSQL systems, distributed databases, and big data analytics with practical applications.',
@@ -530,7 +530,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '28',
+    id: 28,
     title: 'Computer Networks and Security',
     author: 'Dr. Yusuf Al-Razi',
     description: 'Comprehensive study of computer networks, protocols, cybersecurity, and network administration principles.',
@@ -550,7 +550,7 @@ export const books: Book[] = [
   },
   // Additional Engineering Books
   {
-    id: '29',
+    id: 29,
     title: 'Structural Engineering and Mechanics',
     author: 'Prof. Zahra Al-Muhandis',
     description: 'Advanced structural analysis, design principles, earthquake engineering, and modern construction materials.',
@@ -569,7 +569,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '30',
+    id: 30,
     title: 'Electrical Engineering and Power Systems',
     author: 'Dr. Ahmad Al-Karkhi',
     description: 'Comprehensive electrical engineering covering circuits, power systems, renewable energy, and smart grid technologies.',
@@ -588,7 +588,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '31',
+    id: 31,
     title: 'Mechanical Engineering Design',
     author: 'Prof. Hassan Al-Dimashqi',
     description: 'Machine design, manufacturing processes, materials selection, and CAD applications in modern mechanical engineering.',
@@ -608,7 +608,7 @@ export const books: Book[] = [
   },
   // Additional Specialized Sciences
   {
-    id: '32',
+    id: 32,
     title: 'Environmental Science and Sustainability',
     author: 'Dr. Leila Al-Baghdadi',
     description: 'Environmental systems, pollution control, climate change mitigation, and sustainable development strategies.',
@@ -627,7 +627,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '33',
+    id: 33,
     title: 'Materials Science and Nanotechnology',
     author: 'Prof. Omar Al-Andalusi',
     description: 'Advanced materials properties, nanoscale phenomena, and applications in electronics, medicine, and energy.',
@@ -646,7 +646,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '34',
+    id: 34,
     title: 'Oceanography and Marine Sciences',
     author: 'Dr. Fatima Al-Mashriqiya',
     description: 'Physical and biological oceanography, marine ecosystems, ocean currents, and climate interactions.',
@@ -665,7 +665,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '35',
+    id: 35,
     title: 'Atmospheric Physics and Meteorology',
     author: 'Prof. Khalil Al-Shirazi',
     description: 'Atmospheric dynamics, weather systems, climate modeling, and meteorological instrumentation.',
@@ -685,7 +685,7 @@ export const books: Book[] = [
   },
   // Additional Medical Sciences
   {
-    id: '36',
+    id: 36,
     title: 'Human Anatomy and Physiology',
     author: 'Dr. Amina Al-Zahrawi',
     description: 'Comprehensive human anatomy and physiology with clinical correlations and modern imaging techniques.',
@@ -704,7 +704,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '37',
+    id: 37,
     title: 'Pharmacology and Drug Development',
     author: 'Prof. Yusuf Al-Kindi',
     description: 'Modern pharmacology, drug mechanisms, clinical pharmacokinetics, and pharmaceutical development processes.',
@@ -724,7 +724,7 @@ export const books: Book[] = [
   },
   // Additional Interdisciplinary Sciences
   {
-    id: '38',
+    id: 38,
     title: 'Bioinformatics and Computational Biology',
     author: 'Dr. Zahra Al-Tabari',
     description: 'Computational methods in biology, sequence analysis, protein structure prediction, and genomics applications.',
@@ -743,7 +743,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '39',
+    id: 39,
     title: 'Mathematical Physics and Theoretical Mechanics',
     author: 'Prof. Hassan Al-Biruni',
     description: 'Advanced mathematical methods in physics, group theory, differential geometry, and theoretical mechanics.',
@@ -762,7 +762,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '40',
+    id: 40,
     title: 'Economic Mathematics and Financial Modeling',
     author: 'Dr. Layla Al-Isfahani',
     description: 'Mathematical methods in economics, financial derivatives, risk analysis, and quantitative finance.',
@@ -781,7 +781,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '41',
+    id: 41,
     title: 'Cognitive Science and Psychology',
     author: 'Prof. Omar Al-Ghazali',
     description: 'Interdisciplinary study of mind, cognition, perception, learning, and artificial intelligence applications.',
@@ -800,7 +800,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '42',
+    id: 42,
     title: 'Renewable Energy Systems',
     author: 'Dr. Fatima Al-Karkhi',
     description: 'Solar, wind, and hydroelectric power systems, energy storage, grid integration, and sustainability analysis.',
@@ -819,7 +819,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '43',
+    id: 43,
     title: 'Space Physics and Astrophysics',
     author: 'Prof. Ahmad Al-Sufi',
     description: 'Space plasma physics, solar-terrestrial interactions, magnetospheres, and space weather phenomena.',
@@ -838,7 +838,7 @@ export const books: Book[] = [
     featured: false,
   },
   {
-    id: '44',
+    id: 44,
     title: 'Robotics and Automation Engineering',
     author: 'Dr. Yusuf Al-Jazari',
     description: 'Robot kinematics, control systems, artificial intelligence in robotics, and industrial automation.',
@@ -857,7 +857,7 @@ export const books: Book[] = [
     featured: true,
   },
   {
-    id: '45',
+    id: 45,
     title: 'Quantum Computing and Information Theory',
     author: 'Prof. Zahra Al-Khawarizmi',
     description: 'Quantum mechanics foundations, quantum algorithms, quantum cryptography, and quantum information processing.',

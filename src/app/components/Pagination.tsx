@@ -139,7 +139,10 @@ const Pagination: React.FC<PaginationProps> = ({
           onChange={(e) => {
             // Reset to page 1 when changing items per page
             onPageChange(1);
-            // The parent component should handle the itemsPerPage change
+            if (onItemsPerPageChange) {
+              const nextValue = Number(e.target.value);
+              onItemsPerPageChange(nextValue);
+            }
           }}
           className="px-2 py-1 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >

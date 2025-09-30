@@ -4,69 +4,88 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { books } from '../../data/books';
-import { reviews } from '../../data/reviews';
-import { Book, CartItem, Review } from '../../types';
+import { Book, Review } from '../../types';
+import { addItemToCart } from '@/lib/client/cart-api';
 
 export default function BookDetailPage() {
   const [book, setBook] = useState<Book | null>(null);
   const [bookReviews, setBookReviews] = useState<Review[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const params = useParams();
   const router = useRouter();
-  const { id } = params;
+  const paramId = params?.id;
+  const bookId = Array.isArray(paramId) ? paramId[0] : paramId;
 
   useEffect(() => {
-    if (id) {
-      const foundBook = books.find((b) => b.id === id);
-      if (foundBook) {
-        setBook(foundBook);
-        // Get reviews for this book
-        const bookReviewsData = reviews.filter((review) => review.bookId === id);
-        setBookReviews(bookReviewsData);
-      } else {
-        setError('Book not found.');
-      }
-      setIsLoading(false);
+    if (!bookId) {
+      return;
     }
-  }, [id]);
 
-  const handleAddToCart = () => {
-    if (!book) return;
+    let isCancelled = false;
 
-    const cartItem: CartItem = {
-      id: `${book.id}-${Date.now()}`,
-      bookId: book.id,
-      quantity: quantity,
-      addedAt: new Date().toISOString(),
+    const fetchData = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const [bookResponse, reviewsResponse] = await Promise.all([
+          fetch(`/api/books/${bookId}`),
+          fetch(`/api/reviews?bookId=${bookId}`),
+        ]);
+
+        if (!bookResponse.ok) {
+          if (bookResponse.status === 404) {
+            throw new Error('Book not found.');
+          }
+          throw new Error('Failed to fetch book details.');
+        }
+
+        const bookData: Book = await bookResponse.json();
+        const reviewsData: Review[] = reviewsResponse.ok ? await reviewsResponse.json() : [];
+
+        if (!isCancelled) {
+          setBook(bookData);
+          setBookReviews(reviewsData);
+        }
+      } catch (err) {
+        console.error('Error loading book data:', err);
+        if (!isCancelled) {
+          const message = err instanceof Error ? err.message : 'Failed to load book.';
+          setError(message);
+          setBook(null);
+          setBookReviews([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
+      }
     };
 
-    // Retrieve existing cart from localStorage
-    const storedCart = localStorage.getItem('cart');
-    const cart: CartItem[] = storedCart ? JSON.parse(storedCart) : [];
+    fetchData();
 
-    // Check if the book is already in the cart
-    const existingItemIndex = cart.findIndex((item) => item.bookId === book.id);
+    return () => {
+      isCancelled = true;
+    };
+  }, [bookId]);
 
-    if (existingItemIndex > -1) {
-      // Update quantity if item already exists
-      cart[existingItemIndex].quantity += quantity;
-    } else {
-      // Add new item to cart
-      cart.push(cartItem);
+  const handleAddToCart = async () => {
+    if (!book || isSaving) return;
+
+    try {
+      setIsSaving(true);
+      await addItemToCart(book.id, quantity);
+      router.push('/cart');
+    } catch (err) {
+      console.error('Failed to add book to cart', err);
+      setError(err instanceof Error ? err.message : 'Failed to add book to cart');
+    } finally {
+      setIsSaving(false);
     }
-
-    // Save updated cart to localStorage
-    localStorage.setItem('cart', JSON.stringify(cart));
-
-    // Dispatch a custom event to notify the Navbar
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
-
-    // Redirect to the cart page after adding
-    router.push('/cart');
   };
   
   const renderStars = (rating: number) => {
@@ -181,9 +200,14 @@ export default function BookDetailPage() {
 
           <button 
             onClick={handleAddToCart}
-            className="w-full bg-blue-500 text-white py-3 rounded-md hover:bg-blue-600 transition-colors duration-300 text-lg font-semibold cursor-pointer"
+            disabled={isSaving}
+            className={`w-full py-3 rounded-md transition-colors duration-300 text-lg font-semibold ${
+              isSaving
+                ? 'bg-blue-300 text-white cursor-wait'
+                : 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
+            }`}
           >
-            Add to Cart
+            {isSaving ? 'Adding…' : 'Add to Cart'}
           </button>
 
           <Link href="/" className="text-blue-500 hover:underline mt-6 text-center cursor-pointer">
