@@ -1,29 +1,31 @@
 // src/app/page.tsx
-import { headers } from 'next/headers';
 import BookGrid from './components/BookGrid';
 import type { Book } from './types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-async function loadBooks(): Promise<Book[]> {
-  let baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
-
-  if (!baseUrl) {
-    const headerList = await headers();
-    const protocol = headerList.get('x-forwarded-proto') ?? 'http';
-    const host = headerList.get('x-forwarded-host') ?? headerList.get('host');
-    if (host) {
-      baseUrl = `${protocol}://${host}`;
-    }
+function resolveBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '');
   }
 
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL.replace(/\/$/, '')}`;
+  }
+
+  const port = process.env.PORT ?? '3000';
+  return `http://127.0.0.1:${port}`;
+}
+
+async function loadBooks(): Promise<Book[]> {
+  const baseUrl = resolveBaseUrl();
+
   try {
-    const requestUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}/api/books` : '/api/books';
+    const requestUrl = `${baseUrl}/api/books`;
     const response = await fetch(requestUrl, {
       cache: 'no-store',
+      next: { revalidate: 0 },
     });
 
     if (!response.ok) {
