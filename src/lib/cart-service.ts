@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import clientPromise from './mongodb';
+import { getMongoClient, isMongoConfigured } from './mongodb';
 import { ValidationError } from './book-service';
 import { CartItem } from '@/app/types';
 
@@ -14,6 +14,25 @@ type CartItemDocument = {
   addedAt: string;
   _id?: string;
 };
+
+type InMemoryCartStore = Map<string, Map<string, CartItemDocument>>;
+
+function getInMemoryCartStore(): InMemoryCartStore {
+  const globalRef = globalThis as typeof globalThis & { __amanaCartStore?: InMemoryCartStore };
+  if (!globalRef.__amanaCartStore) {
+    globalRef.__amanaCartStore = new Map();
+  }
+  return globalRef.__amanaCartStore;
+}
+
+function getUserCart(store: InMemoryCartStore, userId: string): Map<string, CartItemDocument> {
+  let cart = store.get(userId);
+  if (!cart) {
+    cart = new Map();
+    store.set(userId, cart);
+  }
+  return cart;
+}
 
 export interface AddToCartInput {
   userId: string;
@@ -74,13 +93,20 @@ function normalizeCartItem(doc: CartItemDocument): CartItem {
 }
 
 async function getCollection() {
-  const client = await clientPromise;
+  const client = await getMongoClient();
   return client.db(DB_NAME).collection<CartItemDocument>(CART_COLLECTION);
 }
 
 export async function fetchCartItem(userId: string, bookId: string): Promise<CartItem | null> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
   const normalizedBookId = ensureNonEmptyString(bookId, 'bookId');
+  if (!isMongoConfigured) {
+    const store = getInMemoryCartStore();
+    const userCart = store.get(normalizedUserId);
+    const doc = userCart?.get(normalizedBookId) ?? null;
+    return doc ? normalizeCartItem(doc) : null;
+  }
+
   const collection = await getCollection();
   const doc = await collection.findOne({ userId: normalizedUserId, bookId: normalizedBookId });
   return doc ? normalizeCartItem(doc) : null;
@@ -88,6 +114,18 @@ export async function fetchCartItem(userId: string, bookId: string): Promise<Car
 
 export async function fetchCartByUserId(userId: string): Promise<CartItem[]> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
+  if (!isMongoConfigured) {
+    const store = getInMemoryCartStore();
+    const userCart = store.get(normalizedUserId);
+    if (!userCart) {
+      return [];
+    }
+    return Array.from(userCart.values())
+      .slice()
+      .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+      .map((doc) => normalizeCartItem(doc));
+  }
+
   const collection = await getCollection();
   const docs = await collection.find({ userId: normalizedUserId }).sort({ addedAt: -1 }).toArray();
   return docs.map((doc) => normalizeCartItem(doc));
@@ -102,6 +140,33 @@ export async function addToCart(payload: AddToCartInput): Promise<CartItem> {
   const bookId = ensureNonEmptyString(payload.bookId, 'bookId');
   const quantityToAdd = ensureQuantity(payload.quantity ?? 1);
   const now = new Date().toISOString();
+
+  if (!isMongoConfigured) {
+    const store = getInMemoryCartStore();
+    const userCart = getUserCart(store, userId);
+    const existing = userCart.get(bookId);
+
+    if (existing) {
+      const updatedDoc: CartItemDocument = {
+        ...existing,
+        quantity: ensureQuantity(existing.quantity + quantityToAdd),
+        addedAt: now,
+      };
+      userCart.set(bookId, updatedDoc);
+      return normalizeCartItem(updatedDoc);
+    }
+
+    const cartItem: CartItemDocument = {
+      id: `cart-${randomUUID()}`,
+      userId,
+      bookId,
+      quantity: quantityToAdd,
+      addedAt: now,
+    };
+
+    userCart.set(bookId, cartItem);
+    return normalizeCartItem(cartItem);
+  }
 
   const collection = await getCollection();
   const existing = await collection.findOne({ userId, bookId });
@@ -146,6 +211,29 @@ export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): 
   const now = new Date().toISOString();
   const newId = `cart-${randomUUID()}`;
 
+  if (!isMongoConfigured) {
+    const store = getInMemoryCartStore();
+    const userCart = getUserCart(store, userId);
+    const existing = userCart.get(bookId);
+
+    const cartItem: CartItemDocument = existing
+      ? {
+          ...existing,
+          quantity: normalizedQuantity,
+          addedAt: now,
+        }
+      : {
+          id: newId,
+          userId,
+          bookId,
+          quantity: normalizedQuantity,
+          addedAt: now,
+        };
+
+    userCart.set(bookId, cartItem);
+    return normalizeCartItem(cartItem);
+  }
+
   const collection = await getCollection();
   const updatedDoc = await collection.findOneAndUpdate(
     { userId, bookId },
@@ -174,6 +262,19 @@ export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): 
 export async function removeFromCart(userId: string, bookId: string): Promise<boolean> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
   const normalizedBookId = ensureNonEmptyString(bookId, 'bookId');
+  if (!isMongoConfigured) {
+    const store = getInMemoryCartStore();
+    const userCart = store.get(normalizedUserId);
+    if (!userCart) {
+      return false;
+    }
+    const removed = userCart.delete(normalizedBookId);
+    if (userCart.size === 0) {
+      store.delete(normalizedUserId);
+    }
+    return removed;
+  }
+
   const collection = await getCollection();
   const result = await collection.deleteOne({ userId: normalizedUserId, bookId: normalizedBookId });
   return result.deletedCount === 1;
@@ -181,6 +282,17 @@ export async function removeFromCart(userId: string, bookId: string): Promise<bo
 
 export async function clearCart(userId: string): Promise<number> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
+  if (!isMongoConfigured) {
+    const store = getInMemoryCartStore();
+    const userCart = store.get(normalizedUserId);
+    if (!userCart) {
+      return 0;
+    }
+    const deletedCount = userCart.size;
+    store.delete(normalizedUserId);
+    return deletedCount;
+  }
+
   const collection = await getCollection();
   const result = await collection.deleteMany({ userId: normalizedUserId });
   return result.deletedCount ?? 0;

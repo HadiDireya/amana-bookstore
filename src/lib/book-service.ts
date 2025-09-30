@@ -1,8 +1,10 @@
 import type { Collection, Filter } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
-import clientPromise from './mongodb';
+import { getMongoClient, isMongoConfigured } from './mongodb';
 import { Book, Review } from '@/app/types';
+import fallbackBooksSeed from '../../data/books.json';
+import fallbackReviewsSeed from '../../data/reviews.json';
 
 export const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
 export const BOOKS_COLLECTION = process.env.MONGODB_BOOKS_COLLECTION || 'books';
@@ -127,6 +129,59 @@ function stripMongoId<T extends { _id?: unknown }>(doc: T): Omit<T, '_id'> {
   return rest;
 }
 
+type InMemoryBookStore = {
+  books: Book[];
+  booksById: Map<string, Book>;
+  reviewsByBook: Map<string, Review[]>;
+};
+
+function createInMemoryBookStore(): InMemoryBookStore {
+  const rawBookDocs = Array.isArray(fallbackBooksSeed)
+    ? (fallbackBooksSeed as BookDocument[])
+    : [];
+
+  const normalizedBooks = rawBookDocs
+    .map(normalizeBookSafely)
+    .filter((book): book is Book => book !== null)
+    .map((book) => ({ ...book, id: String(book.id) }));
+
+  const booksById = new Map<string, Book>();
+  normalizedBooks.forEach((book) => {
+    booksById.set(String(book.id), book);
+  });
+
+  const reviewsByBook = new Map<string, Review[]>();
+  booksById.forEach((_, id) => {
+    reviewsByBook.set(id, []);
+  });
+
+  const rawReviewDocs = Array.isArray(fallbackReviewsSeed)
+    ? (fallbackReviewsSeed as ReviewDocument[])
+    : [];
+
+  rawReviewDocs.forEach((doc) => {
+    const normalized = stripMongoId(doc) as Review;
+    const bookId = String(normalized.bookId);
+    const bucket = reviewsByBook.get(bookId) ?? [];
+    bucket.push({ ...normalized, bookId });
+    reviewsByBook.set(bookId, bucket);
+  });
+
+  return {
+    books: Array.from(booksById.values()),
+    booksById,
+    reviewsByBook,
+  };
+}
+
+function getInMemoryBookStore(): InMemoryBookStore {
+  const globalRef = globalThis as typeof globalThis & { __amanaBookStore?: InMemoryBookStore };
+  if (!globalRef.__amanaBookStore) {
+    globalRef.__amanaBookStore = createInMemoryBookStore();
+  }
+  return globalRef.__amanaBookStore;
+}
+
 function buildBookIdQuery(ids: Array<string | number>): Filter<BookDocument> | null {
   if (ids.length === 0) {
     return null;
@@ -178,7 +233,12 @@ function buildBookIdQuery(ids: Array<string | number>): Filter<BookDocument> | n
 }
 
 export async function fetchAllBooks(): Promise<Book[]> {
-  const client = await clientPromise;
+  if (!isMongoConfigured) {
+    const store = getInMemoryBookStore();
+    return store.books.map((book) => ({ ...book }));
+  }
+
+  const client = await getMongoClient();
   const db = client.db(DB_NAME);
   const docs = await db.collection<BookDocument>(BOOKS_COLLECTION).find({}).toArray();
   return docs
@@ -187,7 +247,13 @@ export async function fetchAllBooks(): Promise<Book[]> {
 }
 
 export async function fetchBookById(id: string | number): Promise<Book | null> {
-  const client = await clientPromise;
+  if (!isMongoConfigured) {
+    const store = getInMemoryBookStore();
+    const book = store.booksById.get(String(id));
+    return book ? { ...book } : null;
+  }
+
+  const client = await getMongoClient();
   const db = client.db(DB_NAME);
   const collection = db.collection<BookDocument>(BOOKS_COLLECTION);
 
@@ -205,7 +271,19 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
     return [];
   }
 
-  const client = await clientPromise;
+  if (!isMongoConfigured) {
+    const store = getInMemoryBookStore();
+    const ordered: Book[] = [];
+    ids.forEach((bookId) => {
+      const match = store.booksById.get(String(bookId));
+      if (match) {
+        ordered.push({ ...match });
+      }
+    });
+    return ordered;
+  }
+
+  const client = await getMongoClient();
   const db = client.db(DB_NAME);
   const collection = db.collection<BookDocument>(BOOKS_COLLECTION);
 
@@ -230,11 +308,41 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
 }
 
 export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
-  const client = await clientPromise;
+  if (!isMongoConfigured) {
+    const store = getInMemoryBookStore();
+    const reviews = store.reviewsByBook.get(String(bookId)) ?? [];
+    return reviews
+      .slice()
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .map((review) => ({ ...review }));
+  }
+
+  const client = await getMongoClient();
   const db = client.db(DB_NAME);
   const collection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
   const docs = await collection.find({ bookId }).sort({ timestamp: -1 }).toArray();
   return docs.map((doc) => stripMongoId(doc) as Review);
+}
+
+export async function fetchReviewById(reviewId: string): Promise<Review | null> {
+  const normalizedReviewId = ensureNonEmptyString(reviewId, 'reviewId');
+
+  if (!isMongoConfigured) {
+    const store = getInMemoryBookStore();
+    for (const reviews of store.reviewsByBook.values()) {
+      const match = reviews.find((review) => review.id === normalizedReviewId);
+      if (match) {
+        return { ...match };
+      }
+    }
+    return null;
+  }
+
+  const client = await getMongoClient();
+  const db = client.db(DB_NAME);
+  const collection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
+  const doc = await collection.findOne({ id: normalizedReviewId });
+  return doc ? (stripMongoId(doc) as Review) : null;
 }
 
 export interface CreateBookInput extends Partial<Omit<Book, 'id'>> {
@@ -337,11 +445,25 @@ async function getNextNumericBookId(collection: Collection<BookDocument>): Promi
 }
 
 export async function createBook(payload: CreateBookInput): Promise<Book> {
-  const client = await clientPromise;
-  const db = client.db(DB_NAME);
-  const collection = db.collection<BookDocument>(BOOKS_COLLECTION);
+  const store = isMongoConfigured ? null : getInMemoryBookStore();
+  let collection: Collection<BookDocument> | null = null;
 
-  const numericId = payload.id !== undefined ? toNumericId(payload.id) : await getNextNumericBookId(collection);
+  if (isMongoConfigured) {
+    const client = await getMongoClient();
+    const db = client.db(DB_NAME);
+    collection = db.collection<BookDocument>(BOOKS_COLLECTION);
+  }
+
+  const numericId =
+    payload.id !== undefined
+      ? toNumericId(payload.id)
+      : store
+        ? store.books.reduce((max, current) => {
+            const candidate = Number(current.id);
+            return Number.isFinite(candidate) ? Math.max(max, candidate) : max;
+          }, 0) + 1
+        : await getNextNumericBookId(collection!);
+
   const bookId = String(numericId);
 
   const title = ensureNonEmptyString(payload.title, 'title');
@@ -362,7 +484,49 @@ export async function createBook(payload: CreateBookInput): Promise<Book> {
   const inStock = ensureBoolean(payload.inStock, 'inStock');
   const featured = ensureBoolean(payload.featured, 'featured');
 
-  const existing = await collection.findOne({
+  if (store) {
+    const duplicate = store.books.some(
+      (existing) => existing.id === bookId || existing.isbn === isbn,
+    );
+    if (duplicate) {
+      throw new ValidationError('Book with the same id or ISBN already exists');
+    }
+
+    const storedBook: Book = {
+      id: bookId,
+      title,
+      author,
+      description,
+      price,
+      image,
+      isbn,
+      genre,
+      tags,
+      datePublished,
+      pages,
+      language,
+      publisher,
+      rating,
+      reviewCount,
+      inStock,
+      featured,
+    };
+
+    store.books.push(storedBook);
+    store.booksById.set(bookId, storedBook);
+    if (!store.reviewsByBook.has(bookId)) {
+      store.reviewsByBook.set(bookId, []);
+    }
+
+    return { ...storedBook };
+  }
+
+  const collectionRef = collection;
+  if (!collectionRef) {
+    throw new Error('MongoDB collection is not initialized');
+  }
+
+  const existing = await collectionRef.findOne({
     $or: [
       { id: numericId },
       { id: String(numericId) },
@@ -393,7 +557,7 @@ export async function createBook(payload: CreateBookInput): Promise<Book> {
     featured,
   };
 
-  await collection.insertOne({ ...book, _id: numericId });
+  await collectionRef.insertOne({ ...book, _id: numericId });
   return book;
 }
 
@@ -408,11 +572,6 @@ export async function createReview(payload: CreateReviewInput): Promise<Review> 
     throw new ValidationError('Book not found');
   }
 
-  const client = await clientPromise;
-  const db = client.db(DB_NAME);
-  const reviewsCollection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
-  const booksCollection = db.collection<BookDocument>(BOOKS_COLLECTION);
-
   const reviewId = payload.id ? ensureNonEmptyString(payload.id, 'id') : `review-${randomUUID()}`;
 
   const review: Review = {
@@ -425,6 +584,38 @@ export async function createReview(payload: CreateReviewInput): Promise<Review> 
     timestamp: ensureTimestamp(payload.timestamp, 'timestamp'),
     verified: payload.verified !== undefined ? ensureBoolean(payload.verified, 'verified') : false,
   };
+
+  if (!isMongoConfigured) {
+    const store = getInMemoryBookStore();
+    const normalizedBookId = String(book.id);
+    const reviews = store.reviewsByBook.get(normalizedBookId) ?? [];
+
+    if (reviews.some((existing) => existing.id === review.id)) {
+      throw new ValidationError('Review with the same id already exists');
+    }
+
+    const reviewRecord: Review = { ...review };
+    reviews.push(reviewRecord);
+    store.reviewsByBook.set(normalizedBookId, reviews);
+
+    const totalReviews = reviews.length;
+    const averageRating = totalReviews === 0
+      ? 0
+      : Number((reviews.reduce((sum, current) => sum + current.rating, 0) / totalReviews).toFixed(1));
+
+    const bookRef = store.booksById.get(normalizedBookId);
+    if (bookRef) {
+      bookRef.reviewCount = totalReviews;
+      bookRef.rating = averageRating;
+    }
+
+    return { ...reviewRecord };
+  }
+
+  const client = await getMongoClient();
+  const db = client.db(DB_NAME);
+  const reviewsCollection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
+  const booksCollection = db.collection<BookDocument>(BOOKS_COLLECTION);
 
   const existingReview = await reviewsCollection.findOne({ id: review.id });
   if (existingReview) {

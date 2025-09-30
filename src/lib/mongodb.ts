@@ -2,9 +2,7 @@ import { MongoClient, MongoClientOptions, ServerApiVersion } from 'mongodb';
 
 const uri = process.env.MONGODB_URI;
 
-if (!uri) {
-  throw new Error('Missing MONGODB_URI in environment variables.');
-}
+export const isMongoConfigured = Boolean(uri);
 
 const options: MongoClientOptions = {
   serverApi: {
@@ -14,22 +12,35 @@ const options: MongoClientOptions = {
   },
 };
 
-let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
+let client: MongoClient | undefined;
+let clientPromise: Promise<MongoClient> | null = null;
 
 declare global {
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
-if (process.env.NODE_ENV === 'development') {
-  if (!global._mongoClientPromise) {
-    client = new MongoClient(uri, options);
-    global._mongoClientPromise = client.connect();
+if (isMongoConfigured) {
+  const connectionString = uri as string;
+
+  if (process.env.NODE_ENV === 'development') {
+    if (!global._mongoClientPromise) {
+      client = new MongoClient(connectionString, options);
+      global._mongoClientPromise = client.connect();
+    }
+    clientPromise = global._mongoClientPromise ?? null;
+  } else {
+    client = new MongoClient(connectionString, options);
+    clientPromise = client.connect();
   }
-  clientPromise = global._mongoClientPromise;
-} else {
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect();
+} else if (process.env.NODE_ENV !== 'production') {
+  console.warn('MONGODB_URI is not configured. Falling back to in-memory/static data store.');
+}
+
+export async function getMongoClient(): Promise<MongoClient> {
+  if (!clientPromise) {
+    throw new Error('MongoDB is not configured. Set MONGODB_URI to enable database-backed features.');
+  }
+  return clientPromise;
 }
 
 export default clientPromise;
