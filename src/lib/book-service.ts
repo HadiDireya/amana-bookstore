@@ -1,8 +1,9 @@
-import type { Collection, Filter } from 'mongodb';
+import type { Collection, Db, Filter } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import { getMongoClient, isMongoConfigured } from './mongodb';
 import { Book, Review } from '@/app/types';
+import { defaultBooks, defaultReviews, buildReviewSummaryMap } from './seed-data';
 
 export const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
 export const BOOKS_COLLECTION = process.env.MONGODB_BOOKS_COLLECTION || 'books';
@@ -134,10 +135,38 @@ type InMemoryBookStore = {
 };
 
 function createInMemoryBookStore(): InMemoryBookStore {
+  const reviewSummary = buildReviewSummaryMap(defaultReviews);
+
+  const books: Book[] = [];
+  const booksById = new Map<string, Book>();
+  defaultBooks.forEach((seed) => {
+    const summary = reviewSummary.get(seed.id);
+    const book: Book = {
+      ...seed,
+      rating: summary?.average ?? seed.rating,
+      reviewCount: summary?.count ?? seed.reviewCount,
+    };
+    books.push(book);
+    booksById.set(book.id, book);
+  });
+
+  const reviewsByBook = new Map<string, Review[]>();
+  defaultReviews.forEach((review) => {
+    const normalized: Review = { ...review, bookId: String(review.bookId) };
+    const list = reviewsByBook.get(normalized.bookId) ?? [];
+    list.push(normalized);
+    reviewsByBook.set(normalized.bookId, list);
+  });
+
+  reviewsByBook.forEach((list, bookId) => {
+    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    reviewsByBook.set(bookId, list);
+  });
+
   return {
-    books: [],
-    booksById: new Map<string, Book>(),
-    reviewsByBook: new Map<string, Review[]>(),
+    books,
+    booksById,
+    reviewsByBook,
   };
 }
 
@@ -199,6 +228,89 @@ function buildBookIdQuery(ids: Array<string | number>): Filter<BookDocument> | n
   return { $or: orConditions };
 }
 
+let seedDataPromise: Promise<void> | null = null;
+
+async function ensureMongoSeedData(db: Db): Promise<void> {
+  if (!seedDataPromise) {
+    seedDataPromise = (async () => {
+      const booksCollection = db.collection<BookDocument>(BOOKS_COLLECTION);
+      const reviewsCollection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
+
+      const [bookCount, reviewCount] = await Promise.all([
+        booksCollection.estimatedDocumentCount(),
+        reviewsCollection.estimatedDocumentCount(),
+      ]);
+
+      const reviewSummary = buildReviewSummaryMap(defaultReviews);
+
+      if (bookCount === 0 && defaultBooks.length > 0) {
+        const bookDocs: BookDocument[] = defaultBooks.map((book) => {
+          const summary = reviewSummary.get(book.id);
+          const numericId = Number(book.id);
+          const documentId = Number.isFinite(numericId) ? numericId : book.id;
+          return {
+            ...book,
+            rating: summary?.average ?? book.rating ?? 0,
+            reviewCount: summary?.count ?? book.reviewCount ?? 0,
+            id: String(book.id),
+            _id: documentId,
+          } satisfies BookDocument;
+        });
+
+        if (bookDocs.length > 0) {
+          await booksCollection.insertMany(bookDocs, { ordered: true });
+        }
+      }
+
+      if (reviewCount === 0 && defaultReviews.length > 0) {
+        const reviewDocs: ReviewDocument[] = defaultReviews.map((review) => ({
+          ...review,
+          id: String(review.id),
+          bookId: String(review.bookId),
+          _id: review.id,
+        }));
+
+        if (reviewDocs.length > 0) {
+          await reviewsCollection.insertMany(reviewDocs, { ordered: true });
+        }
+      }
+
+      if ((bookCount === 0 || reviewCount === 0) && defaultReviews.length > 0) {
+        const bulkOps = Array.from(reviewSummary.entries())
+          .map(([bookId, stats]) => {
+            const filter = buildBookIdQuery([bookId]);
+            if (!filter) {
+              return null;
+            }
+            return {
+              updateOne: {
+                filter,
+                update: {
+                  $set: {
+                    rating: stats.average,
+                    reviewCount: stats.count,
+                  },
+                },
+                upsert: false,
+              },
+            } as const;
+          })
+          .filter((entry): entry is { updateOne: { filter: Filter<BookDocument>; update: Record<string, unknown>; upsert: boolean } } => entry !== null);
+
+        if (bulkOps.length > 0) {
+          await booksCollection.bulkWrite(bulkOps, { ordered: false });
+        }
+      }
+    })().catch((err) => {
+      seedDataPromise = null;
+      console.error('Failed to seed MongoDB data', err);
+      throw err;
+    });
+  }
+
+  return seedDataPromise;
+}
+
 export async function fetchAllBooks(): Promise<Book[]> {
   if (!isMongoConfigured()) {
     const store = getInMemoryBookStore();
@@ -207,6 +319,7 @@ export async function fetchAllBooks(): Promise<Book[]> {
 
   const client = await getMongoClient();
   const db = client.db(DB_NAME);
+  await ensureMongoSeedData(db);
   const docs = await db.collection<BookDocument>(BOOKS_COLLECTION).find({}).toArray();
   return docs
     .map(normalizeBookSafely)
@@ -223,6 +336,7 @@ export async function fetchBookById(id: string | number): Promise<Book | null> {
   const client = await getMongoClient();
   const db = client.db(DB_NAME);
   const collection = db.collection<BookDocument>(BOOKS_COLLECTION);
+  await ensureMongoSeedData(db);
 
   const query = buildBookIdQuery([id]);
   if (!query) {
@@ -253,6 +367,7 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
   const client = await getMongoClient();
   const db = client.db(DB_NAME);
   const collection = db.collection<BookDocument>(BOOKS_COLLECTION);
+  await ensureMongoSeedData(db);
 
   const query = buildBookIdQuery(ids);
   if (!query) {
@@ -287,6 +402,7 @@ export async function fetchAllReviews(): Promise<Review[]> {
 
   const client = await getMongoClient();
   const db = client.db(DB_NAME);
+  await ensureMongoSeedData(db);
   const collection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
   const docs = await collection.find({}).sort({ timestamp: -1 }).toArray();
   return docs.map((doc) => stripMongoId(doc) as Review);
@@ -304,6 +420,7 @@ export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
 
   const client = await getMongoClient();
   const db = client.db(DB_NAME);
+  await ensureMongoSeedData(db);
   const collection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
   const docs = await collection.find({ bookId }).sort({ timestamp: -1 }).toArray();
   return docs.map((doc) => stripMongoId(doc) as Review);
@@ -325,6 +442,7 @@ export async function fetchReviewById(reviewId: string): Promise<Review | null> 
 
   const client = await getMongoClient();
   const db = client.db(DB_NAME);
+  await ensureMongoSeedData(db);
   const collection = db.collection<ReviewDocument>(REVIEWS_COLLECTION);
   const doc = await collection.findOne({ id: normalizedReviewId });
   return doc ? (stripMongoId(doc) as Review) : null;
