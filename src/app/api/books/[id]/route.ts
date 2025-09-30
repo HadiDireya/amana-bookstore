@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server';
 import { fetchBookById } from '@/lib/book-service';
 
-type RouteParams = {
-  params: {
-    id: string;
-  };
-};
-
-export async function GET(_request: Request, { params }: RouteParams) {
+export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
     const book = await fetchBookById(params.id);
     if (!book) {
