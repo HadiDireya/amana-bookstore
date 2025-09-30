@@ -53,6 +53,15 @@ function normalizeBook(doc: BookDocument): Book {
   } as Book;
 }
 
+function normalizeBookSafely(doc: BookDocument): Book | null {
+  try {
+    return normalizeBook(doc);
+  } catch (err) {
+    console.error('Skipping invalid book document', err);
+    return null;
+  }
+}
+
 function stripMongoId<T extends { _id?: unknown }>(doc: T): Omit<T, '_id'> {
   const { _id, ...rest } = doc;
   void _id;
@@ -60,24 +69,36 @@ function stripMongoId<T extends { _id?: unknown }>(doc: T): Omit<T, '_id'> {
 }
 
 export async function fetchAllBooks(): Promise<Book[]> {
-  const client = await clientPromise;
-  const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
-  const docs = await collection.find({}).toArray();
-  return docs.map(normalizeBook);
+  try {
+    const client = await clientPromise;
+    const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
+    const docs = await collection.find({}).toArray();
+    return docs
+      .map(normalizeBookSafely)
+      .filter((book): book is Book => book !== null);
+  } catch (err) {
+    console.error('Failed to fetch all books', err);
+    return [];
+  }
 }
 
 export async function fetchBookById(id: string | number): Promise<Book | null> {
-  const client = await clientPromise;
-  const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
+  try {
+    const client = await clientPromise;
+    const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
 
-  const numericId = Number(id);
-  const candidates = [id, String(id)];
-  if (Number.isFinite(numericId)) {
-    candidates.push(numericId);
+    const numericId = Number(id);
+    const candidates = [id, String(id)];
+    if (Number.isFinite(numericId)) {
+      candidates.push(numericId);
+    }
+
+    const doc = await collection.findOne({ id: { $in: candidates } });
+    return doc ? normalizeBookSafely(doc) : null;
+  } catch (err) {
+    console.error('Failed to fetch book by id', err);
+    return null;
   }
-
-  const doc = await collection.findOne({ id: { $in: candidates } });
-  return doc ? normalizeBook(doc) : null;
 }
 
 export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book[]> {
@@ -85,25 +106,37 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
     return [];
   }
 
-  const client = await clientPromise;
-  const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
+  try {
+    const client = await clientPromise;
+    const collection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
 
-  const candidates = ids.flatMap((value) => {
-    const numeric = Number(value);
-    return [value, String(value), Number.isFinite(numeric) ? numeric : undefined].filter(
-      (candidate): candidate is string | number => candidate !== undefined,
-    );
-  });
+    const candidates = ids.flatMap((value) => {
+      const numeric = Number(value);
+      return [value, String(value), Number.isFinite(numeric) ? numeric : undefined].filter(
+        (candidate): candidate is string | number => candidate !== undefined,
+      );
+    });
 
-  const docs = await collection.find({ id: { $in: candidates } }).toArray();
-  return docs.map(normalizeBook);
+    const docs = await collection.find({ id: { $in: candidates } }).toArray();
+    return docs
+      .map(normalizeBookSafely)
+      .filter((book): book is Book => book !== null);
+  } catch (err) {
+    console.error('Failed to fetch books by ids', err);
+    return [];
+  }
 }
 
 export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
-  const client = await clientPromise;
-  const collection = client.db(DB_NAME).collection<ReviewDocument>(REVIEWS_COLLECTION);
-  const docs = await collection.find({ bookId }).sort({ timestamp: -1 }).toArray();
-  return docs.map(doc => stripMongoId(doc) as Review);
+  try {
+    const client = await clientPromise;
+    const collection = client.db(DB_NAME).collection<ReviewDocument>(REVIEWS_COLLECTION);
+    const docs = await collection.find({ bookId }).sort({ timestamp: -1 }).toArray();
+    return docs.map(doc => stripMongoId(doc) as Review);
+  } catch (err) {
+    console.error('Failed to fetch reviews for book', err);
+    return [];
+  }
 }
 
 export class ValidationError extends Error {
