@@ -276,26 +276,35 @@ async function ensureMongoSeedData(db: Db): Promise<void> {
       }
 
       if ((bookCount === 0 || reviewCount === 0) && defaultReviews.length > 0) {
-        const bulkOps = Array.from(reviewSummary.entries())
-          .map(([bookId, stats]) => {
-            const filter = buildBookIdQuery([bookId]);
-            if (!filter) {
-              return null;
-            }
-            return {
-              updateOne: {
-                filter,
-                update: {
-                  $set: {
-                    rating: stats.average,
-                    reviewCount: stats.count,
-                  },
+        type ReviewSyncOperation = {
+          updateOne: {
+            filter: Filter<BookDocument>;
+            update: { $set: { rating: number; reviewCount: number } };
+            upsert: false;
+          };
+        };
+
+        const bulkOps = Array.from(reviewSummary.entries()).reduce<ReviewSyncOperation[]>((ops, [bookId, stats]) => {
+          const filter = buildBookIdQuery([bookId]);
+          if (!filter) {
+            return ops;
+          }
+
+          ops.push({
+            updateOne: {
+              filter,
+              update: {
+                $set: {
+                  rating: stats.average,
+                  reviewCount: stats.count,
                 },
-                upsert: false,
               },
-            } as const;
-          })
-          .filter((entry): entry is { updateOne: { filter: Filter<BookDocument>; update: Record<string, unknown>; upsert: boolean } } => entry !== null);
+              upsert: false,
+            },
+          });
+
+          return ops;
+        }, []);
 
         if (bulkOps.length > 0) {
           await booksCollection.bulkWrite(bulkOps, { ordered: false });
