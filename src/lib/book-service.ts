@@ -7,7 +7,12 @@ const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
 const BOOKS_COLLECTION = process.env.MONGODB_BOOKS_COLLECTION || 'books';
 const REVIEWS_COLLECTION = process.env.MONGODB_REVIEWS_COLLECTION || 'reviews';
 
-type BookDocument = Partial<Book> & { id?: unknown; _id?: unknown };
+type BookDocument = Partial<Omit<Book, 'id'>> & {
+  id?: string | number;
+  _id?: string | number;
+};
+
+type ReviewDocument = Review & { _id?: string };
 
 function toNumericId(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -96,7 +101,7 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
 
 export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
   const client = await clientPromise;
-  const collection = client.db(DB_NAME).collection<Review & { _id?: unknown }>(REVIEWS_COLLECTION);
+  const collection = client.db(DB_NAME).collection<ReviewDocument>(REVIEWS_COLLECTION);
   const docs = await collection.find({ bookId }).sort({ timestamp: -1 }).toArray();
   return docs.map(doc => stripMongoId(doc) as Review);
 }
@@ -274,7 +279,7 @@ export async function createReview(payload: CreateReviewInput): Promise<Review> 
   }
 
   const client = await clientPromise;
-  const reviewsCollection = client.db(DB_NAME).collection<Review & { _id?: unknown }>(REVIEWS_COLLECTION);
+  const reviewsCollection = client.db(DB_NAME).collection<ReviewDocument>(REVIEWS_COLLECTION);
   const booksCollection = client.db(DB_NAME).collection<BookDocument>(BOOKS_COLLECTION);
 
   const reviewId = payload.id ? ensureNonEmptyString(payload.id, 'id') : `review-${randomUUID()}`;
