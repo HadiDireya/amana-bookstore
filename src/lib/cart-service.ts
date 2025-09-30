@@ -100,7 +100,7 @@ async function getCollection() {
 export async function fetchCartItem(userId: string, bookId: string): Promise<CartItem | null> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
   const normalizedBookId = ensureNonEmptyString(bookId, 'bookId');
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryCartStore();
     const userCart = store.get(normalizedUserId);
     const doc = userCart?.get(normalizedBookId) ?? null;
@@ -114,7 +114,7 @@ export async function fetchCartItem(userId: string, bookId: string): Promise<Car
 
 export async function fetchCartByUserId(userId: string): Promise<CartItem[]> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryCartStore();
     const userCart = store.get(normalizedUserId);
     if (!userCart) {
@@ -141,7 +141,7 @@ export async function addToCart(payload: AddToCartInput): Promise<CartItem> {
   const quantityToAdd = ensureQuantity(payload.quantity ?? 1);
   const now = new Date().toISOString();
 
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryCartStore();
     const userCart = getUserCart(store, userId);
     const existing = userCart.get(bookId);
@@ -211,7 +211,7 @@ export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): 
   const now = new Date().toISOString();
   const newId = `cart-${randomUUID()}`;
 
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryCartStore();
     const userCart = getUserCart(store, userId);
     const existing = userCart.get(bookId);
@@ -262,7 +262,7 @@ export async function updateCartItemQuantity(payload: UpdateCartQuantityInput): 
 export async function removeFromCart(userId: string, bookId: string): Promise<boolean> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
   const normalizedBookId = ensureNonEmptyString(bookId, 'bookId');
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryCartStore();
     const userCart = store.get(normalizedUserId);
     if (!userCart) {
@@ -282,7 +282,7 @@ export async function removeFromCart(userId: string, bookId: string): Promise<bo
 
 export async function clearCart(userId: string): Promise<number> {
   const normalizedUserId = ensureNonEmptyString(userId, 'userId');
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryCartStore();
     const userCart = store.get(normalizedUserId);
     if (!userCart) {

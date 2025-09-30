@@ -3,8 +3,6 @@ import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import { getMongoClient, isMongoConfigured } from './mongodb';
 import { Book, Review } from '@/app/types';
-import fallbackBooksSeed from '../../data/books.json';
-import fallbackReviewsSeed from '../../data/reviews.json';
 
 export const DB_NAME = process.env.MONGODB_DB || 'amana_bookstore';
 export const BOOKS_COLLECTION = process.env.MONGODB_BOOKS_COLLECTION || 'books';
@@ -136,41 +134,10 @@ type InMemoryBookStore = {
 };
 
 function createInMemoryBookStore(): InMemoryBookStore {
-  const rawBookDocs = Array.isArray(fallbackBooksSeed)
-    ? (fallbackBooksSeed as BookDocument[])
-    : [];
-
-  const normalizedBooks = rawBookDocs
-    .map(normalizeBookSafely)
-    .filter((book): book is Book => book !== null)
-    .map((book) => ({ ...book, id: String(book.id) }));
-
-  const booksById = new Map<string, Book>();
-  normalizedBooks.forEach((book) => {
-    booksById.set(String(book.id), book);
-  });
-
-  const reviewsByBook = new Map<string, Review[]>();
-  booksById.forEach((_, id) => {
-    reviewsByBook.set(id, []);
-  });
-
-  const rawReviewDocs = Array.isArray(fallbackReviewsSeed)
-    ? (fallbackReviewsSeed as ReviewDocument[])
-    : [];
-
-  rawReviewDocs.forEach((doc) => {
-    const normalized = stripMongoId(doc) as Review;
-    const bookId = String(normalized.bookId);
-    const bucket = reviewsByBook.get(bookId) ?? [];
-    bucket.push({ ...normalized, bookId });
-    reviewsByBook.set(bookId, bucket);
-  });
-
   return {
-    books: Array.from(booksById.values()),
-    booksById,
-    reviewsByBook,
+    books: [],
+    booksById: new Map<string, Book>(),
+    reviewsByBook: new Map<string, Review[]>(),
   };
 }
 
@@ -233,7 +200,7 @@ function buildBookIdQuery(ids: Array<string | number>): Filter<BookDocument> | n
 }
 
 export async function fetchAllBooks(): Promise<Book[]> {
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryBookStore();
     return store.books.map((book) => ({ ...book }));
   }
@@ -247,7 +214,7 @@ export async function fetchAllBooks(): Promise<Book[]> {
 }
 
 export async function fetchBookById(id: string | number): Promise<Book | null> {
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryBookStore();
     const book = store.booksById.get(String(id));
     return book ? { ...book } : null;
@@ -271,7 +238,7 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
     return [];
   }
 
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryBookStore();
     const ordered: Book[] = [];
     ids.forEach((bookId) => {
@@ -308,7 +275,7 @@ export async function fetchBooksByIds(ids: Array<string | number>): Promise<Book
 }
 
 export async function fetchAllReviews(): Promise<Review[]> {
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryBookStore();
     const allReviews = Array.from(store.reviewsByBook.values()).reduce<Review[]>((acc, reviews) => {
       reviews.forEach((review) => acc.push({ ...review }));
@@ -326,7 +293,7 @@ export async function fetchAllReviews(): Promise<Review[]> {
 }
 
 export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryBookStore();
     const reviews = store.reviewsByBook.get(String(bookId)) ?? [];
     return reviews
@@ -345,7 +312,7 @@ export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
 export async function fetchReviewById(reviewId: string): Promise<Review | null> {
   const normalizedReviewId = ensureNonEmptyString(reviewId, 'reviewId');
 
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryBookStore();
     for (const reviews of store.reviewsByBook.values()) {
       const match = reviews.find((review) => review.id === normalizedReviewId);
@@ -463,10 +430,10 @@ async function getNextNumericBookId(collection: Collection<BookDocument>): Promi
 }
 
 export async function createBook(payload: CreateBookInput): Promise<Book> {
-  const store = isMongoConfigured ? null : getInMemoryBookStore();
+  const store = isMongoConfigured() ? null : getInMemoryBookStore();
   let collection: Collection<BookDocument> | null = null;
 
-  if (isMongoConfigured) {
+  if (isMongoConfigured()) {
     const client = await getMongoClient();
     const db = client.db(DB_NAME);
     collection = db.collection<BookDocument>(BOOKS_COLLECTION);
@@ -603,7 +570,7 @@ export async function createReview(payload: CreateReviewInput): Promise<Review> 
     verified: payload.verified !== undefined ? ensureBoolean(payload.verified, 'verified') : false,
   };
 
-  if (!isMongoConfigured) {
+  if (!isMongoConfigured()) {
     const store = getInMemoryBookStore();
     const normalizedBookId = String(book.id);
     const reviews = store.reviewsByBook.get(normalizedBookId) ?? [];
