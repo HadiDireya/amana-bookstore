@@ -1,11 +1,12 @@
 // src/app/page.tsx
+import { headers } from 'next/headers';
 import BookGrid from './components/BookGrid';
 import type { Book } from './types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-function resolveBaseUrl(): string {
+async function resolveBaseUrl(): Promise<string> {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
     return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '');
   }
@@ -14,12 +15,19 @@ function resolveBaseUrl(): string {
     return `https://${process.env.VERCEL_URL.replace(/\/$/, '')}`;
   }
 
+  const requestHeaders = await headers();
+  const protocol = requestHeaders.get('x-forwarded-proto') ?? 'http';
+  const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
+  if (host) {
+    return `${protocol}://${host}`;
+  }
+
   const port = process.env.PORT ?? '3000';
   return `http://127.0.0.1:${port}`;
 }
 
 async function loadBooks(): Promise<Book[]> {
-  const baseUrl = resolveBaseUrl();
+  const baseUrl = await resolveBaseUrl();
 
   try {
     const requestUrl = `${baseUrl}/api/books`;
