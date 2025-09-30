@@ -1,15 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { fetchBookById } from '@/lib/book-service';
 
 type RouteParams = Record<string, string | string[] | undefined>;
 
 export async function GET(
-  _request: Request,
-  context: { params?: Promise<RouteParams> },
+  _request: NextRequest,
+  { params }: { params: Promise<RouteParams> },
 ) {
   try {
-    const params = context.params ? await context.params : undefined;
-    const idValue = params?.id;
+    const resolvedParams = await params;
+    const idValue = resolvedParams?.id;
     const id = Array.isArray(idValue) ? idValue[0] : idValue;
     if (!id) {
       return NextResponse.json(
